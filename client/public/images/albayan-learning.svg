@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 700" role="img" aria-labelledby="title">
+  <title id="title">تعلم القرآن الكريم في مقارئ البيان</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#164e43"/>
+      <stop offset="1" stop-color="#0b7660"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0" stop-color="#d8b875" stop-opacity=".32"/>
+      <stop offset="1" stop-color="#d8b875" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="dots" width="52" height="52" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.5" fill="#fff" opacity=".11"/>
+    </pattern>
+  </defs>
+  <rect width="1600" height="700" fill="url(#bg)"/>
+  <rect width="1600" height="700" fill="url(#dots)"/>
+  <circle cx="1180" cy="330" r="390" fill="url(#glow)"/>
+  <g transform="translate(835 144)" fill="none" stroke="#f2e7cb" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M0 104c95-48 202-42 302 17v260c-100-59-207-65-302-17z" stroke-width="15"/>
+    <path d="M302 121c100-59 207-65 302-17v260c-95-48-202-42-302 17z" stroke-width="15"/>
+    <path d="M55 155c56-21 110-19 160-1M55 206c56-21 110-19 160-1M55 257c56-21 110-19 160-1M389 154c56-21 110-19 160-1M389 205c56-21 110-19 160-1M389 256c56-21 110-19 160-1" stroke-width="9" opacity=".74"/>
+    <path d="M302 55v-30m-17 15h34" stroke="#d8b875" stroke-width="9"/>
+  </g>
+  <path d="M0 618c204-65 374-75 532-29 111 32 213 29 303-10 153-66 306-66 459-7 128 49 229 61 306 34v94H0z" fill="#083f39" opacity=".47"/>
+</svg>

@@ -1,0 +1,546 @@
+import express, { type Request, Response, NextFunction } from "express";
+import path from "path";
+import { registerRoutes } from "./routes";
+import { serveStatic } from "./static";
+import { createServer } from "http";
+import { connectToMongo } from "./db";
+import { connectMongoose } from "./core/database";
+import helmet from "helmet";
+import cookieParser from "cookie-parser";
+import { generalLimiter, authLimiter } from "./core/rateLimiter";
+import session from "express-session";
+import passport from "passport";
+import _MongoStore from "connect-mongo";
+import {
+  noSqlSanitizer,
+  requestId,
+  additionalSecurityHeaders,
+  enforceHttps,
+  privatePageNoIndex,
+  auditLogger,
+  sanitizeErrors,
+} from "./core/securityMiddleware";
+const MongoStore = (_MongoStore as any).default ?? _MongoStore;
+
+// Module routes
+import authRoutes from "./modules/auth/auth.routes";
+import usersRoutes from "./modules/users/users.routes";
+import campaignsRoutes from "./modules/campaigns/campaigns.routes";
+import { ensureSirajaCampaign } from "./modules/campaigns/campaigns.service";
+import donationsRoutes from "./modules/donations/donations.routes";
+import paymentsRoutes from "./modules/payments/payments.routes";
+import beneficiariesRoutes from "./modules/beneficiaries/beneficiaries.routes";
+import deliveriesRoutes from "./modules/deliveries/deliveries.routes";
+import reportsRoutes from "./modules/reports/reports.routes";
+import webauthnRoutes from "./modules/webauthn/webauthn.routes";
+import recurringRoutes, { processDueRecurring } from "./modules/recurring/recurring.routes";
+import notificationsRoutes from "./modules/notifications/notifications.routes";
+import aiRoutes from "./modules/ai/ai.routes";
+import casesRoutes from "./modules/cases/cases.routes";
+import { setupWebSocket } from "./core/websocket";
+import { createSEOMiddleware, registerSEORoutes, registerSitemapRoute } from "./seo";
+import { db } from "./db";
+
+// ── Global crash-guards: prevent unhandled errors from killing the server ──────
+process.on("uncaughtException", (err) => {
+  console.error("[FATAL] uncaughtException — keeping server alive:", err.message, err.stack);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[FATAL] unhandledRejection — keeping server alive:", reason);
+});
+
+const app = express();
+app.set("trust proxy", 1);
+const httpServer = createServer(app);
+
+const ALBAYAN_ASSOCIATION_NAME = "جمعية مقارئ البيان لتعليم القرآن الكريم للناطقين بغير العربية";
+const ALBAYAN_LICENSE_NUMBER = "1000863300";
+
+async function approvedAlBayanDonationSettings(): Promise<any | null> {
+  try {
+    return await db.collection("settings").findOne({
+      associationName: ALBAYAN_ASSOCIATION_NAME,
+      licenseNumber: ALBAYAN_LICENSE_NUMBER,
+      donationChannelsApproved: true,
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function approvedAlBayanDonationChannels(): Promise<boolean> {
+  return Boolean(await approvedAlBayanDonationSettings());
+}
+
+function requireApprovedDonationChannels(req: Request, res: Response, next: NextFunction) {
+  void approvedAlBayanDonationSettings()
+    .then((settings) => {
+      if (!settings) {
+        return res.status(503).json({
+          message: "قنوات التبرع غير مفعّلة حتى اعتماد بيانات الدفع باسم جمعية مقارئ البيان.",
+          code: "DONATION_CHANNELS_NOT_APPROVED",
+        });
+      }
+      (req as any).approvedDonationSettings = settings;
+      next();
+    })
+    .catch(() => res.status(503).json({ message: "تعذر التحقق من قنوات التبرع." }));
+}
+
+function requireEnabledDonationMethod(method: "rajhi" | "bank_transfer") {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const settings = (req as any).approvedDonationSettings;
+    if (!settings) {
+      return res.status(503).json({
+        message: "قنوات التبرع غير مفعّلة حتى اعتماد بيانات الدفع باسم جمعية مقارئ البيان.",
+        code: "DONATION_CHANNELS_NOT_APPROVED",
+      });
+    }
+
+    const enabled = method === "rajhi" ? settings.enableRajhiPayment === true : settings.enableBankTransfer === true;
+    if (!enabled) {
+      return res.status(403).json({
+        message: method === "rajhi" ? "الدفع الإلكتروني غير متاح حالياً." : "التحويل البنكي غير متاح حالياً.",
+        code: "DONATION_METHOD_DISABLED",
+      });
+    }
+
+    if (method === "rajhi") {
+      const hasGatewayCredentials = Boolean(
+        (settings.rajhiTranportalId || process.env.RAJHI_TRANPORTAL_ID) &&
+        (settings.rajhiTranportalPassword || process.env.RAJHI_TRANPORTAL_PASSWORD) &&
+        (settings.rajhiResourceKey || process.env.RAJHI_RESOURCE_KEY)
+      );
+      if (!hasGatewayCredentials) {
+        return res.status(503).json({
+          message: "بوابة الدفع الإلكتروني غير مكتملة الإعداد.",
+          code: "PAYMENT_GATEWAY_NOT_CONFIGURED",
+        });
+      }
+    }
+
+    next();
+  };
+}
+
+function requireSelectedDonationMethod(req: Request, res: Response, next: NextFunction) {
+  const values = [req.body?.gateway, req.body?.paymentMethod]
+    .filter(Boolean)
+    .map((value: unknown) => String(value).toLowerCase());
+  const isRajhi = values.some((value) => value === "rajhi" || value === "online");
+  const isBankTransfer = values.includes("bank_transfer");
+
+  if (isRajhi === isBankTransfer) {
+    return res.status(400).json({
+      message: "اختر وسيلة تبرع واحدة من القنوات المعتمدة.",
+      code: "INVALID_DONATION_METHOD",
+    });
+  }
+
+  return requireEnabledDonationMethod(isRajhi ? "rajhi" : "bank_transfer")(req, res, next);
+}
+
+declare module "http" {
+  interface IncomingMessage {
+    rawBody: unknown;
+  }
+}
+
+// ── Apple Pay domain verification (must be served before any auth/security middleware) ──
+app.use("/.well-known", express.static(path.join(process.cwd(), "client/public/.well-known"), {
+  dotfiles: "allow",
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith("assetlinks.json")) {
+      res.setHeader("Content-Type", "application/json");
+    } else {
+      res.setHeader("Content-Type", "text/plain");
+    }
+  },
+}));
+
+// ── Digital Asset Links (Google Play Store TWA verification) ──────────────────
+app.get("/.well-known/assetlinks.json", (_req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.sendFile(path.join(process.cwd(), "client/public/.well-known/assetlinks.json"));
+});
+// Explicit routes for both filename variants Apple may request
+app.get("/.well-known/apple-developer-merchantid-domain-association", (_req, res) => {
+  res.setHeader("Content-Type", "text/plain");
+  res.sendFile(path.join(process.cwd(), "client/public/.well-known/apple-developer-merchantid-domain-association"));
+});
+app.get("/.well-known/apple-developer-merchantid-domain-association.txt", (_req, res) => {
+  res.setHeader("Content-Type", "text/plain");
+  res.sendFile(path.join(process.cwd(), "client/public/.well-known/apple-developer-merchantid-domain-association.txt"));
+});
+
+// ── Favicon & PWA icons (explicit routes to guarantee correct Content-Type) ───
+app.get("/favicon.ico", (_req, res) => {
+  res.setHeader("Content-Type", "image/x-icon");
+  res.setHeader("Cache-Control", "public, max-age=604800");
+  res.sendFile(path.join(process.cwd(), "client/public/favicon.ico"));
+});
+app.get("/favicon.png", (_req, res) => {
+  res.setHeader("Content-Type", "image/png");
+  res.setHeader("Cache-Control", "public, max-age=604800");
+  res.sendFile(path.join(process.cwd(), "client/public/favicon.png"));
+});
+app.get("/favicon-64.png", (_req, res) => {
+  res.setHeader("Content-Type", "image/png");
+  res.setHeader("Cache-Control", "public, max-age=604800");
+  res.sendFile(path.join(process.cwd(), "client/public/favicon-64.png"));
+});
+app.get("/favicon-32.png", (_req, res) => {
+  res.setHeader("Content-Type", "image/png");
+  res.setHeader("Cache-Control", "public, max-age=604800");
+  res.sendFile(path.join(process.cwd(), "client/public/favicon-32.png"));
+});
+app.get("/favicon-16.png", (_req, res) => {
+  res.setHeader("Content-Type", "image/png");
+  res.setHeader("Cache-Control", "public, max-age=604800");
+  res.sendFile(path.join(process.cwd(), "client/public/favicon-16.png"));
+});
+// Explicit routes for all PWA icons — ensures Content-Type is always image/png
+const PWA_ICON_SIZES = [72, 96, 128, 144, 152, 192, 384, 512];
+for (const size of PWA_ICON_SIZES) {
+  app.get(`/images/icon-${size}.png`, (_req, res) => {
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "public, max-age=604800");
+    res.sendFile(path.join(process.cwd(), `client/public/images/icon-${size}.png`));
+  });
+}
+// Explicit routes for PWA screenshots — ensures Content-Type is image/jpeg
+app.get("/images/screenshot-wide.jpg", (_req, res) => {
+  res.setHeader("Content-Type", "image/jpeg");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  res.sendFile(path.join(process.cwd(), "client/public/images/screenshot-wide.jpg"));
+});
+app.get("/images/screenshot-narrow.jpg", (_req, res) => {
+  res.setHeader("Content-Type", "image/jpeg");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  res.sendFile(path.join(process.cwd(), "client/public/images/screenshot-narrow.jpg"));
+});
+
+// ── PCI DSS Security hardening ────────────────────────────────────────────────
+app.use(enforceHttps);
+app.use(privatePageNoIndex);
+app.use(requestId);
+app.use(additionalSecurityHeaders);
+app.use(noSqlSanitizer);
+
+// Security
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https:"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https:"],
+        imgSrc: ["'self'", "data:", "https:", "blob:"],
+        fontSrc: ["'self'", "https:", "data:"],
+        // media-src: allow HTTPS + blob for video/audio (critical for Safari/WebView)
+        mediaSrc: ["'self'", "https:", "blob:", "data:"],
+        // connectSrc: include wss: always (needed by WebSocket in any env/WebView)
+        connectSrc: ["'self'", "https:", "ws:", "wss:"],
+        // worker-src: allow service-workers + blob workers
+        workerSrc: ["'self'", "blob:"],
+        frameSrc: ["'self'", "https://payment.alrajhibank.com.sa", "https://digitalpayments.alrajhibank.com.sa", "https://accounts.google.com"],
+        formAction: ["'self'", "https://securepayments.alrajhibank.com.sa", "https://digitalpayments.alrajhibank.com.sa", "https:"],
+        frameAncestors: ["*"], // Allow embedding in any iframe (Snapchat / WhatsApp WebView)
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+    frameguard: false, // X-Frame-Options removed — frameAncestors in CSP handles embedding
+  })
+);
+
+// Cookie parser for JWT
+app.use(cookieParser());
+
+// Rate limiting on API routes (PCI DSS 6.4: brute-force protection)
+app.use("/api", generalLimiter);
+app.use("/api", auditLogger);
+// Strict rate limit on all auth paths
+app.use("/api/auth", authLimiter);
+app.use("/api/v2/auth", authLimiter);
+
+app.use(
+  express.json({
+    limit: "10mb",
+    verify: (req, _res, buf) => {
+      req.rawBody = buf;
+    },
+  }),
+);
+
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+export function log(message: string, source = "express") {
+  const formattedTime = new Date().toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+
+  console.log(`${formattedTime} [${source}] ${message}`);
+}
+
+app.use((req, res, next) => {
+  const start = Date.now();
+  const path = req.path;
+  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+
+  const originalResJson = res.json;
+  res.json = function (bodyJson, ...args) {
+    capturedJsonResponse = bodyJson;
+    return originalResJson.apply(res, [bodyJson, ...args]);
+  };
+
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    if (path.startsWith("/api")) {
+      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      if (capturedJsonResponse) {
+        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+      }
+
+      log(logLine);
+    }
+  });
+
+  next();
+});
+
+// ── Track DB readiness so routes can guard against pre-init requests ──────────
+let _dbReady = false;
+app.get("/api/health", (_req, res) => {
+  res.status(200).json({ status: _dbReady ? "ok" : "starting", ts: Date.now() });
+});
+
+(async () => {
+  const port = parseInt(process.env.PORT || "5000", 10);
+
+  // =====================
+  // Session + Passport (must be before ALL routes so req.isAuthenticated() works everywhere)
+  // =====================
+  // [PCI DSS 8.2.4] Session secret must be set via environment — never fall back to a weak default
+  const sessionSecret = process.env.SESSION_SECRET;
+  if (!sessionSecret || sessionSecret.length < 32) {
+    console.error("[SECURITY] SESSION_SECRET is missing or too short (<32 chars). Set it in environment variables.");
+    if (process.env.NODE_ENV === "production") {
+      process.exit(1); // Refuse to start in production without a proper secret
+    }
+  }
+
+  app.use(
+    session({
+      secret: sessionSecret || "dev_only_fallback_set_SESSION_SECRET_in_prod",
+      name: "albayan.sid",
+      resave: false,
+      saveUninitialized: false,
+      rolling: true,                // Reset cookie maxAge on every request — session never expires while active
+      cookie: {
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days rolling — customer is never logged out mid-journey
+        secure: process.env.NODE_ENV === "production",
+        httpOnly: true,
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      },
+      store: MongoStore.create({
+        mongoUrl: process.env.MONGODB_URI,
+        collectionName: "sessions",
+        ttl: 30 * 24 * 60 * 60,    // 30 days — match cookie maxAge
+        autoRemove: "native",
+        touchAfter: 24 * 60 * 60,  // Re-save once per day max (rolling resets timer)
+      }),
+    })
+  );
+  app.use(passport.initialize());
+  app.use(passport.session());
+
+  // =====================
+  // SEO middleware (bot detection for social media sharing)
+  // =====================
+  app.use(createSEOMiddleware(db));
+
+  // =====================
+  // New Module Routes (prefixed to avoid conflicts with legacy Passport auth routes)
+  // =====================
+  app.use("/api/v2/auth", (_req, res) => {
+    res.status(410).json({ message: "تسجيل الدخول متاح برمز الجوال فقط." });
+  });
+  app.use("/api/users", usersRoutes);
+  app.use("/api/campaigns", campaignsRoutes);
+  app.post("/api/donations", requireApprovedDonationChannels, requireSelectedDonationMethod);
+  app.post("/api/payments/rajhi", requireApprovedDonationChannels, requireEnabledDonationMethod("rajhi"));
+  app.post("/api/payments/bank-transfer", requireApprovedDonationChannels, requireEnabledDonationMethod("bank_transfer"));
+  app.post("/api/recurring", requireApprovedDonationChannels);
+  app.post("/api/recurring/process-due", requireApprovedDonationChannels);
+  app.use("/api/donations", donationsRoutes);
+  app.use("/api/payments", paymentsRoutes);
+  app.use("/api/beneficiaries", beneficiariesRoutes);
+  app.use("/api/deliveries", deliveriesRoutes);
+  app.use("/api/reports", reportsRoutes);
+  app.use("/api/auth/webauthn", (_req, res) => {
+    res.status(410).json({ message: "تسجيل الدخول متاح برمز الجوال فقط." });
+  });
+  app.use("/api/recurring", recurringRoutes);
+  app.use("/api/notifications", notificationsRoutes);
+  app.use("/api/ai", aiRoutes);
+  app.use("/api", casesRoutes);
+
+  // Setup WebSocket
+  setupWebSocket(httpServer);
+
+  // ── Connect to MongoDB (required for routes below) ─────────────────────────
+  await connectToMongo();
+  await connectMongoose();
+  try {
+    await ensureSirajaCampaign();
+  } catch {
+    console.error("[Campaigns] Could not initialize the Al-Bayan Siraja project.");
+  }
+  _dbReady = true;
+
+  // =====================
+  // Legacy Routes (CMS, HR, Admin, etc.)
+  // =====================
+  await registerRoutes(httpServer, app);
+  registerSEORoutes(app, db);
+  registerSitemapRoute(app, db);
+
+  // [PCI DSS 6.2.4] Sanitized error handler — never expose stack traces or internals
+  app.use(sanitizeErrors);
+
+  if (process.env.NODE_ENV === "production") {
+    serveStatic(app);
+  } else {
+    const { setupVite } = await import("./vite");
+    await setupVite(httpServer, app);
+  }
+
+  // ── Start listening — after ALL middleware & routes are registered ─────────
+  // keepAliveTimeout/headersTimeout MUST be set before listen().
+  // Render recommends ≥120s; headersTimeout MUST be > keepAliveTimeout.
+  httpServer.keepAliveTimeout = 120_000;
+  httpServer.headersTimeout  = 121_000;
+  httpServer.listen({ port, host: "0.0.0.0", reusePort: true }, () => {
+    log(`serving on port ${port}`);
+  });
+
+  // ── Recurring Donations Scheduler ─────────────────────────────────────────
+  // Runs every hour: generates Al Rajhi payment links for due recurring donations
+  // and emails them automatically to donors.
+  const RECURRING_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+  const runRecurringScheduler = async () => {
+    try {
+      if (!(await approvedAlBayanDonationChannels())) return;
+      const { processed, errors } = await processDueRecurring();
+      if (processed > 0 || errors > 0) {
+        log(`[Recurring Scheduler] processed=${processed} errors=${errors}`);
+      }
+    } catch (err: any) {
+      console.error("[Recurring Scheduler] unexpected error:", err.message);
+    }
+  };
+  // Run once on startup (catches any missed charges), then every hour
+  setTimeout(runRecurringScheduler, 30_000);
+  setInterval(runRecurringScheduler, RECURRING_INTERVAL_MS);
+
+  // ── Expire stale pending payments after 3 hours ──────────────────────────
+  // IMPORTANT: We ONLY auto-expire donations where the donor never reached Al Rajhi's
+  // payment page (rajhiRef is absent/null/empty). If rajhiRef IS set, the donor was
+  // redirected to the gateway and money may have been captured — we NEVER auto-fail
+  // those. Admins can recover them via the batch-recovery tool.
+  const expireStalePendingPayments = async () => {
+    try {
+      const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
+      const result = await db.collection("donations").updateMany(
+        {
+          status: "pending",
+          paymentMethod: { $in: ["online", "rajhi"] },
+          createdAt: { $lt: threeHoursAgo },
+          // Only expire donations that never reached the gateway (no PaymentID stored).
+          // If rajhiRef exists & is non-empty, the user reached Al Rajhi's payment page
+          // and may have paid — leave those for manual/admin recovery.
+          $or: [
+            { paymentMethod: "online" },
+            { rajhiRef: { $exists: false } },
+            { rajhiRef: null },
+            { rajhiRef: "" },
+          ],
+        },
+        { $set: { status: "failed", expiredAt: new Date() } }
+      );
+      if (result.modifiedCount > 0) {
+        log(`[Payment Expiry] Expired ${result.modifiedCount} stale pending donations (no gateway reach)`);
+      }
+    } catch (err: any) {
+      console.error("[Payment Expiry] Error:", err.message);
+    }
+  };
+  // Run once 5 minutes after startup, then every 30 minutes
+  setTimeout(expireStalePendingPayments, 5 * 60 * 1000);
+  setInterval(expireStalePendingPayments, 30 * 60 * 1000);
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // ── Auto-recovery: inquiry on stuck pending Rajhi donations ──────────────
+  // If Al Rajhi's callback never arrived (network issue, wrong IP whitelist, etc.),
+  // this cron queries the gateway directly for every pending Rajhi donation
+  // older than 8 minutes and auto-confirms it if payment was captured.
+  // This means no donation can stay stuck in PENDING forever — they self-recover.
+  const autoRecoverPendingRajhi = async () => {
+    try {
+      if (!(await approvedAlBayanDonationChannels())) return;
+      const s = await db.collection("settings").findOne({}) as any;
+      const tId  = s?.rajhiTranportalId       || process.env.RAJHI_TRANPORTAL_ID || "";
+      const tPwd = s?.rajhiTranportalPassword || process.env.RAJHI_TRANPORTAL_PASSWORD || "";
+      const rKey = s?.rajhiResourceKey        || process.env.RAJHI_RESOURCE_KEY || "";
+      if (!tId || !tPwd || !rKey) return;
+
+      const eightMinutesAgo = new Date(Date.now() - 8 * 60 * 1000);
+      const stuckDonations = await db.collection("donations").find({
+        status: "pending",
+        paymentMethod: "rajhi",
+        rajhiRef: { $exists: true, $nin: [null, ""] },
+        createdAt: { $lt: eightMinutesAgo },
+      }).limit(20).toArray();
+
+      if (stuckDonations.length === 0) return;
+      log(`[Auto-Recovery] Checking ${stuckDonations.length} stuck Rajhi donations...`);
+
+      const { inquireRajhiPayment } = await import("./rajhi");
+      const { updateDonationStatus } = await import("./modules/donations/donations.service");
+      const baseUrl = process.env.BASE_URL || process.env.APP_URL;
+      if (!baseUrl) return;
+      const cbUrl = `${baseUrl}/api/donations/rajhi-callback`;
+
+      for (const donation of stuckDonations) {
+        try {
+          const result = await inquireRajhiPayment({
+            tranportalId: tId,
+            tranportalPassword: tPwd,
+            resourceKey: rKey,
+            orderId: donation._id.toString(),
+            paymentId: donation.rajhiRef && donation.rajhiRef !== donation._id.toString()
+              ? donation.rajhiRef : undefined,
+            errorUrl: cbUrl,
+            responseUrl: cbUrl,
+          });
+          if (result.queried && result.successful) {
+            await updateDonationStatus({ _id: donation._id.toString() }, "confirmed");
+            log(`[Auto-Recovery] ✅ Recovered donation ${donation._id} — inquiry confirmed capture`);
+          }
+        } catch (e: any) {
+          console.error(`[Auto-Recovery] Inquiry failed for ${donation._id}:`, e.message);
+        }
+      }
+    } catch (err: any) {
+      console.error("[Auto-Recovery] Cron error:", err.message);
+    }
+  };
+  // Run first time 2 minutes after startup, then every 10 minutes
+  setTimeout(autoRecoverPendingRajhi, 2 * 60 * 1000);
+  setInterval(autoRecoverPendingRajhi, 10 * 60 * 1000);
+  // ──────────────────────────────────────────────────────────────────────────
+})();

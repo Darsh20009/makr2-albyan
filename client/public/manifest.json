@@ -1,0 +1,104 @@
+{
+  "name": "جمعية مقارئ البيان لتعليم القرآن الكريم للناطقين بغير العربية",
+  "short_name": "مقارئ البيان",
+  "description": "جمعية أهلية مقرها الرياض لتعليم القرآن الكريم للناطقين بغير العربية.",
+  "id": "albayan-quran-association",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "background_color": "#f8f7f2",
+  "theme_color": "#07564d",
+  "orientation": "portrait-primary",
+  "lang": "ar",
+  "dir": "rtl",
+  "prefer_related_applications": false,
+  "related_applications": [],
+  "iarc_rating_id": "e84b072d-71b3-4d3e-86ae-31a8ce4e53b7",
+  "shortcuts": [
+    {
+      "name": "البرامج التعليمية",
+      "short_name": "البرامج",
+      "description": "تعرّف على برامج مقارئ البيان لتعليم القرآن الكريم.",
+      "url": "/services",
+      "icons": [{ "src": "/images/albayan-mark.svg", "sizes": "128x128", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "بيانات الجمعية",
+      "short_name": "عن الجمعية",
+      "description": "البيانات الرسمية وقرار التسجيل.",
+      "url": "/about",
+      "icons": [{ "src": "/images/albayan-mark.svg", "sizes": "128x128", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "تواصل معنا",
+      "short_name": "تواصل",
+      "description": "للاستفسار والتواصل",
+      "url": "/contact",
+      "icons": [{ "src": "/images/albayan-mark.svg", "sizes": "128x128", "type": "image/svg+xml" }]
+    }
+  ],
+  "icons": [
+    {
+      "src": "/images/albayan-mark.svg",
+      "sizes": "72x72",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/albayan-mark.svg",
+      "sizes": "96x96",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/albayan-mark.svg",
+      "sizes": "128x128",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/albayan-mark.svg",
+      "sizes": "144x144",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/albayan-mark.svg",
+      "sizes": "152x152",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/albayan-mark.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/albayan-mark.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/images/albayan-mark.svg",
+      "sizes": "384x384",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/albayan-mark.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/albayan-mark.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["education", "books", "lifestyle"]
+}

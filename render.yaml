@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: maqari-albayan
+    runtime: node
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20.20.0
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: MONGODB_URI
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: BASE_URL
+        sync: false
+      - key: QIROX_PROJECT_API_KEY_PRODUCTION
+        sync: false
+      - key: QIROX_PROJECT_WHATSAPP_KEY_PRODUCTION
+        sync: false
+      - key: SMTP2GO_API_KEY
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
