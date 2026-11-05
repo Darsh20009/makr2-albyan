@@ -2,7 +2,7 @@ services:
   - type: web
     name: maqari-albayan
     runtime: node
-    buildCommand: npm ci --include=dev && npm run build
+    buildCommand: npm ci --include=dev --no-audit --no-fund && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
@@ -12,6 +12,8 @@ services:
         value: production
       - key: SESSION_SECRET
         generateValue: true
+      - key: ADMIN_LOGIN_PASSWORD
+        sync: false
       - key: MONGODB_URI
         sync: false
       - key: APP_URL
