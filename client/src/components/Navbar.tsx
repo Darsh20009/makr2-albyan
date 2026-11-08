@@ -10,6 +10,7 @@ import "./Navbar.css";
 const publicLinks = [
   { href: "/", label: "الرئيسية" },
   { href: "/campaigns", label: "المشاريع" },
+  { href: "/programs", label: "البرامج التعليمية" },
   { href: "/about", label: "عن الجمعية" },
   { href: "/impact", label: "التقارير" },
   { href: "/faq", label: "الأسئلة الشائعة" },
@@ -29,7 +30,7 @@ export function Navbar() {
     ...(user.role === "delivery" ? [{ href: "/delivery", label: "لوحة المندوب" }] : []),
   ] : [];
   const isPublicLinkActive = (href: string) =>
-    location === href || (href === "/campaigns" && location.startsWith("/campaigns"));
+    location === href || (["/campaigns", "/programs"].includes(href) && location.startsWith(`${href}/`));
 
   return (
     <>

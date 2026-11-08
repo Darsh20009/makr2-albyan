@@ -33,6 +33,7 @@ function invalidateCache(...keys: string[]) {
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { canReadFinancialRecord } from "../shared/access-policy";
 import { sendEmail, emailTemplates, setMailDb } from "./mail";
 import { generateCertificatePDF, generateInvoicePDF } from "./pdf";
 import { initiateRajhiPayment } from "./rajhi";
@@ -726,9 +727,11 @@ export async function registerRoutes(
   });
 
   app.get("/api/certificates/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    if (!ObjectId.isValid(String(req.params.id))) return res.sendStatus(404);
     try {
       const cert = await db.collection("certificates").findOne({ _id: new ObjectId(String(req.params.id)) });
-      if (!cert) return res.status(404).json({ message: "الشهادة غير موجودة" });
+      if (!cert || !canReadFinancialRecord(req.user as any, cert)) return res.status(404).json({ message: "الشهادة غير موجودة" });
       res.json({ ...cert, id: cert._id.toString() });
     } catch (err) {
       res.status(500).json({ message: "خطأ في جلب الشهادة" });
@@ -1168,6 +1171,8 @@ export async function registerRoutes(
   });
 
   app.post("/api/bank-transfers/:id/send-receipt", async (req: Request, res: Response) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    if (!ObjectId.isValid(String(req.params.id))) return res.sendStatus(404);
     try {
       const transferId = req.params.id;
       const { email, donorName: reqDonorName } = req.body;
@@ -1175,7 +1180,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "يرجى إدخال بريد إلكتروني صحيح" });
       }
       const transfer = await db.collection("bank_transfers").findOne({ _id: new ObjectId(String(transferId)) });
-      if (!transfer) return res.status(404).json({ message: "الطلب غير موجود" });
+      if (!transfer || !canReadFinancialRecord(req.user as any, transfer)) return res.status(404).json({ message: "الطلب غير موجود" });
 
       const donorName = reqDonorName || transfer.donorName || "فاعل خير";
       const amount = transfer.amount || 0;
@@ -1810,9 +1815,11 @@ export async function registerRoutes(
   });
 
   app.get("/api/invoices/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    if (!ObjectId.isValid(String(req.params.id))) return res.sendStatus(404);
     try {
       const invoice = await db.collection("invoices").findOne({ _id: new ObjectId(String(req.params.id)) });
-      if (!invoice) return res.status(404).json({ message: "الفاتورة غير موجودة" });
+      if (!invoice || !canReadFinancialRecord(req.user as any, invoice)) return res.status(404).json({ message: "الفاتورة غير موجودة" });
       res.json({ ...invoice, id: invoice._id.toString() });
     } catch (err) {
       res.status(500).json({ message: "خطأ في جلب الفاتورة" });
@@ -3389,6 +3396,8 @@ export async function registerRoutes(
   // ==================== GUEST DONATION PDF EMAIL =============================
   // Allow guest donors to receive their certificate + invoice as PDF by email
   app.post("/api/donations/:id/send-pdf", async (req: Request, res: Response) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    if (!ObjectId.isValid(String(req.params.id))) return res.sendStatus(404);
     try {
       const donationId = req.params.id as string;
       const { email } = req.body;
@@ -3397,7 +3406,7 @@ export async function registerRoutes(
       }
 
       const donation = await db.collection("donations").findOne({ _id: new ObjectId(donationId) });
-      if (!donation) return res.status(404).json({ message: "التبرع غير موجود" });
+      if (!donation || !canReadFinancialRecord(req.user as any, donation)) return res.status(404).json({ message: "التبرع غير موجود" });
       if (donation.status !== "confirmed") {
         return res.status(400).json({ message: "لا يمكن إرسال الوثائق قبل تأكيد التبرع" });
       }
@@ -3406,8 +3415,11 @@ export async function registerRoutes(
       const certRecord = await db.collection("certificates").findOne({ donationId });
       const invRecord  = await db.collection("invoices").findOne({ donationId });
 
-      const certNum = certRecord?.certificateNumber || `MBN-CERT-${Date.now()}`;
-      const invNum  = invRecord?.invoiceNumber  || `MBN-INV-${Date.now()}`;
+      if (!certRecord?.certificateNumber || !invRecord?.invoiceNumber) {
+        return res.status(409).json({ message: "وثائق هذه العملية لم تُصدر بعد. تواصل مع الإدارة للمراجعة." });
+      }
+      const certNum = certRecord.certificateNumber;
+      const invNum = invRecord.invoiceNumber;
 
       const donorName = donation.donorName || "فاعل خير";
       const amount    = donation.amount    || 0;

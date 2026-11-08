@@ -41,6 +41,7 @@ export function Footer() {
             <h2>روابط مهمة</h2>
             <div className="ab-footer-link-list">
               <Link className="ab-footer-link" href="/about">عن الجمعية</Link>
+              <Link className="ab-footer-link" href="/programs">البرامج التعليمية</Link>
               <Link className="ab-footer-link" href="/campaigns">المشاريع الحالية</Link>
               <Link className="ab-footer-link" href="/impact">التقرير التعليمي</Link>
               <Link className="ab-footer-link" href="/bylaws">الأهداف النظامية</Link>

@@ -25,10 +25,10 @@ function setMeta(property: string, content: string, isName = false) {
 
 export function useSEO({ title, description, image, type = "website", url }: SEOOptions) {
   useEffect(() => {
-    const fullTitle = `${title} | ${SITE_NAME}`;
+    const fullTitle = title.includes("مقارئ البيان") ? title : `${title} | ${SITE_NAME}`;
     const finalDesc = description || "مقارئ البيان لتعليم القرآن الكريم — برامج تعليمية لتلاوة القرآن الكريم وحفظه وإتقانه";
     const finalImage = image ? (image.startsWith("http") ? image : `${BASE_URL}${image}`) : DEFAULT_IMAGE;
-    const finalUrl = url || window.location.href;
+    const finalUrl = new URL(url || window.location.pathname, BASE_URL).href;
 
     // Page title
     document.title = fullTitle;
@@ -40,12 +40,19 @@ export function useSEO({ title, description, image, type = "website", url }: SEO
     setMeta("og:title", fullTitle);
     setMeta("og:description", finalDesc);
     setMeta("og:image", finalImage);
-    setMeta("og:image:width", "1200");
-    setMeta("og:image:height", "630");
+    document.querySelector('meta[property="og:image:width"]')?.remove();
+    document.querySelector('meta[property="og:image:height"]')?.remove();
     setMeta("og:url", finalUrl);
     setMeta("og:type", type);
     setMeta("og:site_name", SITE_NAME);
     setMeta("og:locale", "ar_SA");
+    let canonical = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
+    if (!canonical) {
+      canonical = document.createElement("link");
+      canonical.rel = "canonical";
+      document.head.appendChild(canonical);
+    }
+    canonical.href = finalUrl;
 
     // Twitter Card
     setMeta("twitter:card", "summary_large_image", true);

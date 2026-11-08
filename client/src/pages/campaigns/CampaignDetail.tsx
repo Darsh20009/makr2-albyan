@@ -61,7 +61,7 @@ export default function CampaignDetail() {
   useSEO({
     title: campaign?.title || "المشروع الإنساني",
     description: campaign?.description || "تعرّف على البرنامج التعليمي في مقارئ البيان لتعليم القرآن الكريم",
-    image: (campaign as any)?.imageUrl || campaign?.image || "/images/og-banner2.png",
+    image: (campaign as any)?.imageUrl || campaign?.image || "/images/albayan-hero-quran.webp",
   });
 
   const campaignUrl = `/campaigns/${id}`;

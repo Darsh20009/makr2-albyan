@@ -1,9 +1,15 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { UnauthorizedError, ForbiddenError } from "./errors";
+import { createHmac } from "node:crypto";
 
-const JWT_SECRET = process.env.JWT_SECRET || "twaq_jwt_secret_2024_secure";
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "twaq_refresh_secret_2024_secure";
+function signingSecret(kind: "access" | "refresh"): string {
+  const explicit = process.env[kind === "access" ? "JWT_SECRET" : "JWT_REFRESH_SECRET"];
+  if (explicit && explicit.length >= 32) return explicit;
+  const sessionSecret = process.env.SESSION_SECRET;
+  if (!sessionSecret || sessionSecret.length < 32) throw new Error("Secure token signing is not configured");
+  return createHmac("sha256", sessionSecret).update(`albayan-jwt-${kind}`).digest("hex");
+}
 
 export interface JwtPayload {
   userId: string;
@@ -13,19 +19,19 @@ export interface JwtPayload {
 }
 
 export function generateAccessToken(payload: JwtPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: "15m" });
+  return jwt.sign(payload, signingSecret("access"), { expiresIn: "15m", algorithm: "HS256" });
 }
 
 export function generateRefreshToken(payload: JwtPayload): string {
-  return jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: "7d" });
+  return jwt.sign(payload, signingSecret("refresh"), { expiresIn: "7d", algorithm: "HS256" });
 }
 
 export function verifyAccessToken(token: string): JwtPayload {
-  return jwt.verify(token, JWT_SECRET) as JwtPayload;
+  return jwt.verify(token, signingSecret("access"), { algorithms: ["HS256"] }) as JwtPayload;
 }
 
 export function verifyRefreshToken(token: string): JwtPayload {
-  return jwt.verify(token, JWT_REFRESH_SECRET) as JwtPayload;
+  return jwt.verify(token, signingSecret("refresh"), { algorithms: ["HS256"] }) as JwtPayload;
 }
 
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {

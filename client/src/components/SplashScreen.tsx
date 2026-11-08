@@ -1,6 +1,5 @@
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import logo from "@assets/image_1770243307526.png";
 
 export function SplashScreen({ onFinish }: { onFinish: () => void }) {
   const [loading, setLoading] = useState(0);
@@ -36,18 +35,19 @@ export function SplashScreen({ onFinish }: { onFinish: () => void }) {
         >
           <div className="relative p-1 rounded-full bg-emerald-500/10">
             <div className="bg-white rounded-full p-6 shadow-xl">
-              <motion.img 
-                src={logo} 
-                alt="الجمعية" 
+              <motion.img
+                src="/images/albayan-mark.svg"
+                alt="شعار مقارئ البيان"
                 className="w-32 h-32 md:w-44 md:h-44 object-contain"
-                animate={{ 
-                  scale: [1, 1.05, 1]
-                }}
+                animate={{ scale: [1, 1.05, 1] }}
                 transition={{ duration: 3, repeat: Infinity }}
               />
             </div>
           </div>
         </motion.div>
+        <p className="-mt-8 text-lg font-bold text-emerald-900">
+          جمعية مقارئ البيان
+        </p>
 
         {/* Minimalist Loading */}
         <div className="w-64 space-y-3">

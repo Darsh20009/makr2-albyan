@@ -1,720 +1,412 @@
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link, useLocation } from "wouter";
+import {
+  ArrowLeft, ChevronLeft, CheckCircle2, Clock, XCircle, FileText,
+  Heart, History, ShieldCheck, LockKeyhole, Mail, Phone, Edit2,
+  RefreshCw, Pause, Play, Ban, AlertCircle, LayoutDashboard, Save, Printer,
+} from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
-import { useAuth } from "@/hooks/use-auth";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import {
-  User, Shield, Heart, Coins, History, CheckCircle2, Clock, XCircle,
-  FileText, Award, Edit2, Save, X, Fingerprint, Loader2, MonitorSmartphone,
-  Trash2, PlusCircle, RefreshCw, Pause, Play, Ban, Star, TrendingUp, Gift,
-  CalendarPlus, CalendarCheck,
-} from "lucide-react";
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
-  DropdownMenuSeparator, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Link, useLocation } from "wouter";
-import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { Donation } from "@shared/schema";
-import { Input } from "@/components/ui/input";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useAuth, type User } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
+import type { Donation } from "@shared/schema";
+import "./Profile.css";
 
-// ──────────────────────────────────────────────────────────
-// Points tier helper
-// ──────────────────────────────────────────────────────────
-function getTier(points: number) {
-  if (points >= 50000) return { label: "بلاتيني", color: "bg-purple-100 text-purple-700", icon: "💎" };
-  if (points >= 20000) return { label: "ذهبي", color: "bg-yellow-100 text-yellow-700", icon: "🥇" };
-  if (points >= 5000) return { label: "فضي", color: "bg-gray-100 text-gray-700", icon: "🥈" };
-  return { label: "برونزي", color: "bg-amber-100 text-amber-700", icon: "🥉" };
+type DonorDonation = Omit<Donation, "createdAt" | "status"> & {
+  createdAt?: string | Date;
+  status: string;
+  campaignTitle?: string;
+};
+type Recurring = {
+  _id?: string;
+  id?: string;
+  amount: number;
+  type?: string;
+  frequency: string;
+  status: string;
+  nextChargeDate?: string;
+};
+type DonationEnvelope = { success?: boolean; donations: DonorDonation[]; total?: number };
+type RecurringEnvelope = { success?: boolean; data: Recurring[] };
+type DonationFilter = "all" | "confirmed" | "pending";
+type IssuedInvoice = {
+  id: string;
+  invoiceNumber?: string;
+  userId?: string;
+  donorName?: string;
+  amount: number;
+  type?: string;
+  createdAt?: string;
+  status?: string;
+};
+
+const amount = (value: number) => Number(value || 0).toLocaleString("ar-SA", { maximumFractionDigits: 2 });
+function dateLabel(value?: string | Date) {
+  if (!value || Number.isNaN(new Date(value).getTime())) return "التاريخ غير متاح";
+  return new Date(value).toLocaleDateString("ar-SA", { year: "numeric", month: "short", day: "numeric" });
 }
-
-// ──────────────────────────────────────────────────────────
-// Donation type label
-// ──────────────────────────────────────────────────────────
-function donationTypeLabel(type: string) {
-  const map: Record<string, string> = {
-    general: "صدقة عامة",
-    zakat: "زكاة",
-    waqf: "وقف",
-    water: "سقيا الماء",
-    "ramadan-basket": "سلة رمضانية",
-    iftar: "إفطار صائم",
+function donationLabel(type?: string) {
+  const labels: Record<string, string> = {
+    general: "تبرع عام", zakat: "زكاة", waqf: "وقف", water: "سقيا الماء",
+    "ramadan-basket": "سلة رمضانية", iftar: "إفطار صائم",
   };
-  return map[type] || type || "عام";
+  return (type && labels[type]) || type || "تبرع";
+}
+function statusInfo(status: string) {
+  switch (status) {
+    case "confirmed": return { label: "مؤكد", className: "", Icon: CheckCircle2 };
+    case "pending": return { label: "قيد المراجعة", className: "ap-pending", Icon: Clock };
+    case "failed": return { label: "لم يكتمل", className: "ap-failed", Icon: XCircle };
+    case "rejected": return { label: "مرفوض", className: "ap-failed", Icon: XCircle };
+    case "refunded": return { label: "مسترد", className: "ap-neutral", Icon: History };
+    default: return { label: "الحالة غير متاحة", className: "ap-neutral", Icon: AlertCircle };
+  }
 }
 
-// ──────────────────────────────────────────────────────────
-// Calendar helpers for recurring donations
-// ──────────────────────────────────────────────────────────
-function toICSDate(date: Date): string {
-  return date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+// Preserve the API's envelope in the shared cache; select only in this observer.
+// Fetch every page before presenting an account-wide confirmed total.
+async function fetchPersonalDonations(userId: string): Promise<DonationEnvelope> {
+  if (!/^[a-f\d]{24}$/i.test(userId)) throw new Error("Account identifier unavailable");
+  const donations: DonorDonation[] = [];
+  let page = 1;
+  let total: number | undefined;
+  do {
+    const params = new URLSearchParams({ userId, page: String(page), limit: "100" });
+    const response = await apiRequest("GET", `/api/donations?${params}`);
+    const json = await response.json();
+    const items = Array.isArray(json) ? json : json.donations;
+    if (json.success === false || !Array.isArray(items)) throw new Error("Invalid donation response");
+    donations.push(...items);
+    total = typeof json.total === "number" ? json.total : undefined;
+    if (items.length === 0 && total !== undefined && donations.length < total) {
+      throw new Error("Incomplete donation history");
+    }
+    if (total === undefined || donations.length >= total) break;
+    page++;
+  } while (true);
+  return { donations, total: donations.length };
 }
 
-function generateICS(r: any): string {
-  const startDate = r.nextChargeDate ? new Date(r.nextChargeDate) : new Date();
-  startDate.setHours(10, 0, 0, 0);
-  const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
-  const freq = r.frequency === "daily" ? "DAILY" : "MONTHLY";
-  const count = r.duration || (r.frequency === "daily" ? 30 : 12);
-  const title = r.frequency === "daily"
-    ? `مراجعة يومية - مقارئ البيان`
-    : `مراجعة شهرية - مقارئ البيان`;
-  const desc = `تذكير تعليمي في مقارئ البيان - ${donationTypeLabel(r.type)}`;
-  const uid = `albayan-learning-${r._id || Date.now()}@${window.location.hostname}`;
-
-  return [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    "PRODID:-//Al Bayan Quran Learning//AR",
-    "CALSCALE:GREGORIAN",
-    "METHOD:PUBLISH",
-    "BEGIN:VEVENT",
-    `UID:${uid}`,
-    `DTSTART:${toICSDate(startDate)}`,
-    `DTEND:${toICSDate(endDate)}`,
-    `RRULE:FREQ=${freq};COUNT=${count}`,
-    `SUMMARY:${title}`,
-    `DESCRIPTION:${desc}`,
-    `URL:${window.location.origin}`,
-    "BEGIN:VALARM",
-    "TRIGGER:-P1D",
-    "ACTION:DISPLAY",
-    `DESCRIPTION:تذكير: ${title} غداً - ${Number(r.amount || 0).toLocaleString("ar-SA")} ر.س`,
-    "END:VALARM",
-    "END:VEVENT",
-    "END:VCALENDAR",
-  ].join("\r\n");
+function LoadingRows() {
+  return <div role="status" aria-label="جارٍ تحميل البيانات" aria-busy="true">
+    <div className="ap-skeleton" /><div className="ap-skeleton" /><div className="ap-skeleton" />
+  </div>;
+}
+function QueryError({ retry, pending = false }: { retry: () => void; pending?: boolean }) {
+  return <div className="ap-error" role="alert">
+    <AlertCircle aria-hidden="true" /><h3>تعذّر تحميل البيانات</h3>
+    <p>لم نتمكن من عرض السجل الآن. أعد المحاولة؛ بياناتك لم تتغير.</p>
+    <button className="ap-button" onClick={retry} disabled={pending}><RefreshCw />{pending ? "جارٍ إعادة المحاولة…" : "إعادة المحاولة"}</button>
+  </div>;
 }
 
-function downloadICS(r: any) {
-  const content = generateICS(r);
-  const blob = new Blob([content], { type: "text/calendar;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `albayan-reminder-${r.frequency || "monthly"}.ics`;
-  a.click();
-  URL.revokeObjectURL(url);
+function invoiceStatus(status?: string) {
+  return ({
+    paid: "مدفوع", issued: "صادر", confirmed: "مؤكد", pending: "قيد المراجعة",
+    cancelled: "ملغي", refunded: "مسترد", unpaid: "غير مدفوع",
+  } as Record<string, string>)[status || ""] || status || "غير متاحة";
 }
 
-function getGoogleCalendarLink(r: any): string {
-  const startDate = r.nextChargeDate ? new Date(r.nextChargeDate) : new Date();
-  startDate.setHours(10, 0, 0, 0);
-  const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
-  const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-  const freq = r.frequency === "daily" ? "DAILY" : "MONTHLY";
-  const count = r.duration || (r.frequency === "daily" ? 30 : 12);
-  const title = encodeURIComponent(r.frequency === "daily" ? "مراجعة يومية - مقارئ البيان" : "مراجعة شهرية - مقارئ البيان");
-  const details = encodeURIComponent(`تذكير تعليمي في مقارئ البيان - ${donationTypeLabel(r.type)}`);
-  const recur = encodeURIComponent(`RRULE:FREQ=${freq};COUNT=${count}`);
-  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${fmt(startDate)}/${fmt(endDate)}&recur=${recur}&details=${details}&sf=true&output=xml`;
+function InvoiceDocument({ invoice }: { invoice: IssuedInvoice }) {
+  return <article className="ap-invoice-document" dir="rtl">
+    <header><p>جمعية مقارئ البيان لتعليم القرآن الكريم</p><h2>إيصال تبرع</h2></header>
+    <dl>
+      <div><dt>رقم الإيصال</dt><dd><bdi>{invoice.invoiceNumber || "غير متاح"}</bdi></dd></div>
+      <div><dt>اسم المتبرع</dt><dd>{invoice.donorName || "غير متاح"}</dd></div>
+      <div><dt>المبلغ</dt><dd>{amount(invoice.amount)} ريال سعودي</dd></div>
+      <div><dt>نوع التبرع</dt><dd>{donationLabel(invoice.type)}</dd></div>
+      <div><dt>تاريخ الإصدار</dt><dd>{dateLabel(invoice.createdAt)}</dd></div>
+      <div><dt>حالة الإيصال</dt><dd>{invoiceStatus(invoice.status)}</dd></div>
+    </dl>
+    <footer>نسخة من بيانات الإيصال الصادر والمسجّل في حسابك.</footer>
+  </article>;
 }
 
-// ──────────────────────────────────────────────────────────
-// Component
-// ──────────────────────────────────────────────────────────
+function InvoicePanel({ accountId }: { accountId: string }) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const invoicesQuery = useQuery<IssuedInvoice[]>({
+    queryKey: ["/api/invoices", "profile", accountId],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/invoices");
+      const json = await res.json();
+      if (!Array.isArray(json)) throw new Error("Invalid invoice response");
+      return json;
+    },
+  });
+  const invoiceQuery = useQuery<IssuedInvoice>({
+    queryKey: ["/api/invoices", selectedId, accountId],
+    enabled: !!selectedId,
+    queryFn: async () => {
+      if (!selectedId) throw new Error("No invoice selected");
+      const res = await apiRequest("GET", `/api/invoices/${encodeURIComponent(selectedId)}`);
+      const json = await res.json();
+      if (!json || json.success === false || String(json.id || json._id) !== selectedId) throw new Error("Invalid invoice response");
+      return json;
+    },
+    staleTime: 0,
+  });
+  const invoice = !invoiceQuery.isError ? invoiceQuery.data : undefined;
+  return <>
+    <section id="profile-receipts" className="ap-panel ap-invoices" aria-labelledby="profile-receipts-title">
+      <div className="ap-panel-heading"><div><h2 id="profile-receipts-title">الإيصالات الصادرة</h2><p>اعرض إيصالك واطبعه أو احفظه بصيغة PDF من نافذة طباعة المتصفح، دون الحاجة إلى البريد.</p></div><FileText aria-hidden="true" /></div>
+      {invoicesQuery.isPending ? <LoadingRows /> : invoicesQuery.isError ? <QueryError retry={() => { void invoicesQuery.refetch(); }} pending={invoicesQuery.isFetching} />
+        : !invoicesQuery.data.length ? <div className="ap-empty"><FileText /><h3>لا توجد إيصالات صادرة بعد</h3><p>ستظهر هنا الإيصالات التي تصدرها الجمعية لحسابك. تأكيد التبرع وحده لا يعني صدور إيصال.</p></div>
+          : invoicesQuery.data.map((item, index) => <article className="ap-invoice-row" key={item.id || index} data-testid={`invoice-row-${index}`}>
+            <div><h3>{item.invoiceNumber ? <>إيصال رقم <bdi>{item.invoiceNumber}</bdi></> : "إيصال صادر دون رقم ظاهر"}</h3><p>{amount(item.amount)} ر.س · {dateLabel(item.createdAt)}</p><p>الحالة: {invoiceStatus(item.status)}</p></div>
+            <button className="ap-button" disabled={!item.id} onClick={() => setSelectedId(item.id)} data-testid={`button-view-invoice-${index}`}><FileText />عرض الإيصال</button>
+          </article>)}
+    </section>
+    <Dialog open={!!selectedId} onOpenChange={open => { if (!open) setSelectedId(null); }}>
+      <DialogContent className="ap-dialog ap-invoice-dialog" dir="rtl">
+        <DialogHeader className="text-right"><DialogTitle>عرض الإيصال</DialogTitle><DialogDescription>بيانات الإيصال الصادر من الجمعية. اختر «حفظ بصيغة PDF» في نافذة الطباعة لحفظ نسخة على جهازك.</DialogDescription></DialogHeader>
+        {invoiceQuery.isPending || invoiceQuery.isFetching ? <LoadingRows /> : invoiceQuery.isError ? <QueryError retry={() => { void invoiceQuery.refetch(); }} pending={invoiceQuery.isFetching} />
+          : invoice ? <><InvoiceDocument invoice={invoice} /><button className="ap-button ap-button-primary" onClick={() => window.print()} data-testid="button-print-invoice"><Printer />طباعة / حفظ PDF</button></> : null}
+      </DialogContent>
+    </Dialog>
+    {selectedId && invoice && !invoiceQuery.isFetching && createPortal(<div className="ap-print-root"><InvoiceDocument invoice={invoice} /></div>, document.body)}
+  </>;
+}
+
+function DonationRow({ donation, index }: {
+  donation: DonorDonation; index: number;
+}) {
+  const status = statusInfo(donation.status);
+  return <article className="ap-donation" data-testid={`donation-row-${index}`}>
+    <div className="ap-donation-main">
+      <div className={`ap-status-icon ${status.className}`}><status.Icon aria-hidden="true" /></div>
+      <div className="ap-donation-info">
+        <div className="ap-donation-top">
+          <h3>{donation.campaignTitle || donationLabel(donation.type)}</h3>
+          <div className="ap-amount">{amount(donation.amount)} <small>{donation.currency && donation.currency !== "SAR" ? donation.currency : "ر.س"}</small></div>
+        </div>
+        <div className="ap-donation-meta">
+          <time>{dateLabel(donation.createdAt)}</time>
+          <span className={`ap-status ${status.className}`}>{status.label}</span>
+        </div>
+        {donation.status === "pending" && <p className="ap-notice">بانتظار التأكيد، ولا يُحتسب ضمن إجمالي تبرعاتك المؤكدة.</p>}
+        {donation.status === "confirmed" && <div className="ap-receipt">
+          <span>الإيصالات المتاحة تظهر في قسم الإيصالات الصادرة.</span>
+          <a href="#profile-receipts" className="ap-button"><FileText />عرض الإيصالات الصادرة</a>
+        </div>}
+      </div>
+    </div>
+  </article>;
+}
+
 export default function Profile() {
   const { user, isLoading, togglePrivacy } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
-  const [isBiometricPending, setIsBiometricPending] = useState(false);
-  const [deletingCredentialId, setDeletingCredentialId] = useState<string | null>(null);
   const [editData, setEditData] = useState({ name: "", email: "" });
-
-  // ── Biometric helpers ──────────────────────────────────
-  const handleRegisterBiometric = async () => {
-    if (!window.PublicKeyCredential) {
-      toast({ title: "غير مدعوم", description: "متصفحك لا يدعم الدخول بالبصمة", variant: "destructive" });
-      return;
-    }
-    setIsBiometricPending(true);
-    try {
-      const res = await apiRequest("GET", "/api/auth/webauthn/challenge");
-      const { challenge } = await res.json();
-      const challengeBuffer = Uint8Array.from(atob(challenge), c => c.charCodeAt(0));
-      const userIdBuffer = Uint8Array.from(user?.id || "", c => c.charCodeAt(0));
-      const credential = await navigator.credentials.create({
-        publicKey: {
-          challenge: challengeBuffer,
-          rp: { name: "مقارئ البيان لتعليم القرآن الكريم", id: window.location.hostname },
-          user: { id: userIdBuffer, name: user?.mobile || "user", displayName: user?.name || "User" },
-          pubKeyCredParams: [{ alg: -7, type: "public-key" }, { alg: -257, type: "public-key" }],
-          timeout: 60000,
-          attestation: "none",
-        }
-      }) as any;
-      if (!credential) throw new Error("فشل إنشاء البصمة");
-      const response = credential.response;
-      let publicKey = "";
-      if (response.getPublicKey) {
-        const pkBuffer = new Uint8Array(response.getPublicKey());
-        let binary = "";
-        for (let i = 0; i < pkBuffer.length; i++) binary += String.fromCharCode(pkBuffer[i]);
-        publicKey = btoa(binary);
-      }
-      await apiRequest("POST", "/api/auth/webauthn/register", { credential: { id: credential.id, publicKey } });
-      await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      toast({ title: "تم التسجيل", description: "تم تفعيل الدخول بالبصمة بنجاح" });
-    } catch (error: any) {
-      toast({ title: "خطأ", description: error.message || "فشل تسجيل البصمة", variant: "destructive" });
-    } finally {
-      setIsBiometricPending(false);
-    }
-  };
-
-  const handleDeleteCredential = async (credentialId: string) => {
-    setDeletingCredentialId(credentialId);
-    try {
-      const res = await apiRequest("DELETE", `/api/auth/webauthn/credentials/${credentialId}`);
-      if (!res.ok) throw new Error("فشل حذف الجهاز");
-      await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      toast({ title: "تم الحذف", description: "تم إزالة الجهاز بنجاح" });
-    } catch (err: any) {
-      toast({ title: "خطأ", description: err.message || "فشل حذف الجهاز", variant: "destructive" });
-    } finally {
-      setDeletingCredentialId(null);
-    }
-  };
-
-  // ── Queries ───────────────────────────────────────────
-  const { data: donationsRaw } = useQuery<Donation[]>({
-    queryKey: ["/api/donations"],
-    enabled: !!user,
-    queryFn: async () => {
-      const res = await fetch("/api/donations", { credentials: "include" });
-      if (!res.ok) return [];
-      const json = await res.json();
-      return Array.isArray(json) ? json : (Array.isArray(json?.donations) ? json.donations : []);
-    },
+  const [filter, setFilter] = useState<DonationFilter>("all");
+  const [privacyPending, setPrivacyPending] = useState(false);
+  const [privacyError, setPrivacyError] = useState(false);
+  const [cancelTarget, setCancelTarget] = useState<Recurring | null>(null);
+  const accountId = user?._id || user?.id || "";
+  // The list endpoint treats an invalid Mongo ID as no filter. Never issue an
+  // unscoped request, especially when an administrator opens their own account.
+  const userId = /^[a-f\d]{24}$/i.test(accountId) ? accountId : "";
+  // An observer for the existing auth query exposes its error without changing useAuth.
+  const authState = useQuery<User | null>({ queryKey: ["/api/auth/me"], enabled: false });
+  const donationsQuery = useQuery({
+    queryKey: ["/api/donations", "profile", userId],
+    enabled: !!userId,
+    queryFn: () => fetchPersonalDonations(userId),
+    select: (data) => data.donations,
   });
-  const donations = Array.isArray(donationsRaw) ? donationsRaw : [];
-
-  const { data: recurringRaw = [], refetch: refetchRecurring } = useQuery<any[]>({
+  const recurringQuery = useQuery<RecurringEnvelope, Error, Recurring[]>({
     queryKey: ["/api/recurring"],
     enabled: !!user,
     queryFn: async () => {
-      const res = await fetch("/api/recurring", { credentials: "include" });
-      if (!res.ok) return [];
+      const res = await apiRequest("GET", "/api/recurring");
       const json = await res.json();
-      return json?.data || [];
+      if (json.success === false || !Array.isArray(json.data)) throw new Error("Invalid recurring response");
+      return json;
     },
+    select: data => data.data,
   });
-  const recurring: any[] = Array.isArray(recurringRaw) ? recurringRaw : [];
 
-  // ── Mutations ─────────────────────────────────────────
-  const updateProfileMutation = useMutation({
+  const profileMutation = useMutation({
     mutationFn: async (data: { name: string; email: string }) => {
       const res = await apiRequest("PATCH", "/api/user/profile", data);
-      return res.json();
+      const json = await res.json();
+      if (json?.success === false) throw new Error("Profile was not updated");
+      return json;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+    onSuccess: (_data, values) => {
+      queryClient.setQueryData<User>(["/api/auth/me"], old => old ? { ...old, ...values } : old);
       setIsEditing(false);
-      toast({ title: "تم التحديث", description: "تم حفظ التعديلات بنجاح" });
-    },
-    onError: (error: any) => {
-      toast({ title: "خطأ", description: error.message || "فشل في تحديث الملف الشخصي", variant: "destructive" });
+      toast({ title: "تم حفظ بياناتك" });
     },
   });
-
-  const updateRecurringMutation = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      const res = await apiRequest("PATCH", `/api/recurring/${id}`, { status });
-      return res.json();
+  const recurringMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: "active" | "paused" }) => {
+      const res = await apiRequest("PATCH", `/api/recurring/${encodeURIComponent(id)}`, { status });
+      const json = await res.json();
+      if (json.success === false || !json.data) throw new Error("Recurring update failed");
+      return json.data as Recurring;
     },
-    onSuccess: () => {
-      refetchRecurring();
-      toast({ title: "تم التحديث" });
+    onSuccess: item => {
+      queryClient.setQueryData<RecurringEnvelope>(["/api/recurring"], old => old ? {
+        ...old, data: old.data.map(r => (r._id || r.id) === (item._id || item.id) ? item : r),
+      } : old);
+      toast({ title: "تم تحديث التبرع الدوري" });
     },
   });
-
-  const deleteRecurringMutation = useMutation({
+  const cancelMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await apiRequest("DELETE", `/api/recurring/${id}`);
-      return res.json();
+      const res = await apiRequest("DELETE", `/api/recurring/${encodeURIComponent(id)}`);
+      const json = await res.json();
+      if (json.success === false) throw new Error("Recurring cancellation failed");
     },
-    onSuccess: () => {
-      refetchRecurring();
-      toast({ title: "تم الإلغاء", description: "تم إلغاء الاشتراك الدوري" });
+    onSuccess: (_data, id) => {
+      queryClient.setQueryData<RecurringEnvelope>(["/api/recurring"], old => old ? {
+        ...old, data: old.data.filter(r => (r._id || r.id) !== id),
+      } : old);
+      setCancelTarget(null);
+      toast({ title: "تم إلغاء التبرع الدوري" });
     },
   });
 
-  // ── Effects ───────────────────────────────────────────
   useEffect(() => {
-    if (!isLoading && !user) setLocation("/login");
-    if (user) setEditData({ name: user.name || "", email: user.email || "" });
-  }, [user, isLoading, setLocation]);
+    if (!isLoading && !user && !authState.isError) setLocation("/login");
+  }, [isLoading, user, authState.isError, setLocation]);
 
-  if (isLoading) return (
-    <div className="min-h-screen flex flex-col bg-muted/30" dir="rtl">
-      <Navbar />
-      <main className="flex-1 container mx-auto px-4 py-8 max-w-4xl space-y-4">
-        <Skeleton className="h-32 w-full rounded-2xl" />
-        <Skeleton className="h-12 w-64 rounded-xl" />
-        <Skeleton className="h-64 w-full rounded-2xl" />
-        <Skeleton className="h-64 w-full rounded-2xl" />
-      </main>
-      <Footer />
-    </div>
-  );
-  if (!user) return null;
+  const startEditing = () => {
+    setEditData({ name: user?.name || "", email: user?.email || "" });
+    profileMutation.reset();
+    setIsEditing(true);
+  };
+  const changePrivacy = async (checked: boolean) => {
+    setPrivacyPending(true);
+    setPrivacyError(false);
+    try { await togglePrivacy(checked); }
+    catch { setPrivacyError(true); }
+    finally { setPrivacyPending(false); }
+  };
+  const donations = donationsQuery.data || [];
+  const confirmed = donations.filter(d => d.status === "confirmed" && !d.isDeleted);
+  const pending = donations.filter(d => d.status === "pending" && !d.isDeleted);
+  const visible = donations.filter(d => !d.isDeleted && (filter === "all" || d.status === filter));
+  const currencies = Array.from(new Set(confirmed.map(d => d.currency || "SAR")));
+  const confirmedSAR = confirmed.filter(d => !d.currency || d.currency === "SAR").reduce((sum, d) => sum + Number(d.amount || 0), 0);
+  const recurring = recurringQuery.data || [];
+  const workDashboard = user?.role === "admin" || user?.role === "manager" ? "/admin"
+    : user?.role === "delivery" ? "/delivery"
+      : ["employee", "accountant", "programmer", "sales"].includes(user?.role || "") ? "/employee" : null;
 
-  const tier = getTier(user.points || 0);
-  const confirmedDonations = donations.filter((d: any) => d.status === "confirmed");
-  const activeRecurring = recurring.filter(r => r.status === "active");
-
-  // ── Render ────────────────────────────────────────────
-  return (
-    <div className="min-h-screen flex flex-col bg-muted/30">
-      <Navbar />
-
-      <main className="flex-1 container mx-auto px-4 py-10 max-w-3xl" dir="rtl">
-
-        {/* ── Profile Header Card ── */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-6">
-          <div className="h-24 relative" style={{ background: "linear-gradient(135deg, hsl(152 42% 28%) 0%, hsl(152 42% 42%) 100%)" }}>
-            <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff'%3E%3Cpath d='M20 20.5V18H0v5h5v5H0v5h20v-2.5h-5V20.5h5zM8 10H0v10h8V10z'/%3E%3C/g%3E%3C/svg%3E\")" }} />
-          </div>
-          <div className="px-6 pb-6 -mt-12">
-            <div className="flex items-end justify-between gap-3 flex-wrap">
-              <div className="flex items-end gap-4">
-                <div className="w-20 h-20 rounded-2xl border-4 border-white shadow-lg flex items-center justify-center text-white text-3xl font-black shrink-0" style={{ background: "hsl(152 42% 30%)" }}>
-                  {user.name.charAt(0)}
-                </div>
-                <div className="mb-1">
-                  {isEditing ? (
-                    <div className="space-y-2">
-                      <Input value={editData.name} onChange={e => setEditData(p => ({ ...p, name: e.target.value }))} placeholder="الاسم" className="h-8 text-sm w-48" data-testid="input-edit-name" />
-                      <Input value={editData.email} onChange={e => setEditData(p => ({ ...p, email: e.target.value }))} placeholder="البريد" type="email" className="h-8 text-sm w-48" data-testid="input-edit-email" />
-                    </div>
-                  ) : (
-                    <>
-                      <h1 className="text-xl font-black">{user.name}</h1>
-                      <p className="text-muted-foreground text-sm font-mono" dir="ltr">{user.mobile}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Badge className="text-xs" variant="secondary">
-                          <Shield className="w-3 h-3 ml-1" />
-                          {user.role === "admin" ? "مدير" : user.role === "employee" ? "موظف" : "داعم"}
-                        </Badge>
-                        <Badge className={cn("text-xs", tier.color)}>
-                          {tier.icon} {tier.label}
-                        </Badge>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-              <div className="flex gap-2 mb-1">
-                {isEditing ? (
-                  <>
-                    <Button size="sm" className="gap-1" onClick={() => updateProfileMutation.mutate(editData)} disabled={updateProfileMutation.isPending} data-testid="button-save-profile">
-                      <Save className="w-3.5 h-3.5" /> حفظ
-                    </Button>
-                    <Button size="sm" variant="outline" className="gap-1" onClick={() => setIsEditing(false)}>
-                      <X className="w-3.5 h-3.5" /> إلغاء
-                    </Button>
-                  </>
-                ) : (
-                  <Button size="sm" variant="outline" className="gap-1" onClick={() => setIsEditing(true)} data-testid="button-edit-profile">
-                    <Edit2 className="w-3.5 h-3.5" /> تعديل
-                  </Button>
-                )}
-              </div>
+  return <div className="ab-profile" dir="rtl">
+    <Navbar />
+    <main className="ap-main">
+      {isLoading ? <><div className="ap-skeleton ap-loading-overview" /><LoadingRows /></>
+        : !user ? authState.isError ? <QueryError retry={() => { void authState.refetch(); }} pending={authState.isFetching} /> : <div className="ap-skeleton ap-loading-overview" role="status" aria-label="جارٍ الانتقال لتسجيل الدخول" />
+          : <>
+            <nav className="ap-breadcrumb" aria-label="مسار الصفحة"><Link href="/">الرئيسية</Link><ChevronLeft aria-hidden="true" /><span aria-current="page">حسابي</span></nav>
+            <div className="ap-page-title"><div><h1>حسابي</h1><p>عطاؤك وبياناتك، في مكان واحد.</p></div><Link href="/campaigns" className="ap-button">استعرض فرص العطاء<ArrowLeft /></Link></div>
+            {workDashboard && <aside className="ap-staff"><span>هذا حسابك الشخصي. لإدارة مهام العمل:</span><Link href={workDashboard} className="ap-button"><LayoutDashboard />انتقل إلى لوحة العمل<ArrowLeft /></Link></aside>}
+            <div className="ap-overview">
+              <section className="ap-identity" aria-label="بيانات الحساب">
+                <div className="ap-identity-top"><div className="ap-avatar" aria-hidden="true">{user.name?.trim().charAt(0) || "ب"}</div><div><span className="ap-eyebrow">مرحباً بك في مقارئ البيان</span><h2>{user.name || "حساب المتبرع"}</h2></div></div>
+                <div className="ap-contact"><Phone aria-hidden="true" /><bdi>{user.mobile || user.phone || "لم يُضف رقم جوال"}</bdi></div>
+                <div className="ap-contact"><Mail aria-hidden="true" /><span dir={user.email ? "ltr" : undefined}>{user.email || "لم يُضف بريد إلكتروني"}</span></div>
+                <div className="ap-identity-footer"><span>بيانات الحساب الشخصي</span><button className="ap-button" onClick={startEditing} data-testid="button-edit-profile"><Edit2 />تعديل البيانات</button></div>
+              </section>
+              <section className="ap-summary" aria-label="ملخص التبرعات">
+                <div className="ap-summary-heading"><Heart aria-hidden="true" />إجمالي تبرعاتك المؤكدة</div>
+                {donationsQuery.isPending && userId ? <div className="ap-skeleton ap-skeleton-summary" role="status" aria-label="جارٍ حساب الإجمالي" />
+                  : donationsQuery.isError || !userId ? <><div className="ap-summary-total"><strong>—</strong></div><p>الإجمالي غير متاح حالياً. أعد تحميل السجل أدناه.</p></>
+                    : <><div className="ap-summary-total"><strong data-testid="confirmed-donations-total">{amount(confirmedSAR)}</strong><span>ريال سعودي</span></div><p>المبالغ المؤكدة فقط، دون المعلّقة أو المستردة.</p>
+                      {currencies.some(c => c !== "SAR") && <p>تبرعات العملات الأخرى موضّحة في السجل ولا تُجمع مع الريال.</p>}
+                      <div className="ap-summary-bottom"><span><CheckCircle2 />{amount(confirmed.length)} تبرع مؤكد</span><span><Clock />{amount(pending.length)} قيد المراجعة</span></div></>}
+              </section>
             </div>
-          </div>
-        </div>
-
-        {/* ── Summary Stats ── */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-          {[
-            { icon: Heart, label: "إجمالي التبرعات", value: `${Number(user.totalDonations || 0).toLocaleString("ar-SA")} ر.س`, color: "text-red-600", bg: "bg-red-50" },
-            { icon: Coins, label: "نقاط العطاء", value: (user.points || 0).toLocaleString("ar-SA"), color: "text-yellow-600", bg: "bg-yellow-50" },
-            { icon: History, label: "عدد التبرعات", value: donations.length, color: "text-blue-600", bg: "bg-blue-50" },
-            { icon: RefreshCw, label: "اشتراكات دورية", value: activeRecurring.length, color: "text-green-600", bg: "bg-green-50" },
-          ].map((s, i) => (
-            <Card key={i} className="border-0 shadow-sm">
-              <CardContent className="p-4">
-                <div className={`w-9 h-9 ${s.bg} rounded-xl flex items-center justify-center mb-2`}>
-                  <s.icon className={`w-4.5 h-4.5 ${s.color}`} />
-                </div>
-                <p className={`text-xl font-black ${s.color}`}>{s.value}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {/* ── Tabs ── */}
-        <Tabs defaultValue="donations" dir="rtl">
-          <TabsList className="w-full h-auto grid grid-cols-4 mb-6 bg-white border border-gray-100 shadow-sm rounded-xl p-1">
-            <TabsTrigger value="donations" className="gap-1.5 text-xs data-[state=active]:bg-primary data-[state=active]:text-white rounded-lg py-2" data-testid="tab-donations">
-              <History className="w-3.5 h-3.5" /> تبرعاتي
-            </TabsTrigger>
-            <TabsTrigger value="recurring" className="gap-1.5 text-xs data-[state=active]:bg-primary data-[state=active]:text-white rounded-lg py-2" data-testid="tab-recurring">
-              <RefreshCw className="w-3.5 h-3.5" /> الدورية
-            </TabsTrigger>
-            <TabsTrigger value="points" className="gap-1.5 text-xs data-[state=active]:bg-primary data-[state=active]:text-white rounded-lg py-2" data-testid="tab-points">
-              <Coins className="w-3.5 h-3.5" /> نقاطي
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="gap-1.5 text-xs data-[state=active]:bg-primary data-[state=active]:text-white rounded-lg py-2" data-testid="tab-settings">
-              <Shield className="w-3.5 h-3.5" /> الأمان
-            </TabsTrigger>
-          </TabsList>
-
-          {/* ── Tab: Donations ── */}
-          <TabsContent value="donations">
-            <Card className="border-0 shadow-sm">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base font-bold flex items-center gap-2">
-                    <History className="w-5 h-5 text-primary" />
-                    سجل التبرعات
-                  </CardTitle>
-                  <Badge variant="secondary">{donations.length} تبرع</Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {donations.length === 0 ? (
-                  <div className="text-center py-12">
-                    <Heart className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
-                    <p className="text-muted-foreground font-medium mb-4">لا يوجد تبرعات سابقة بعد</p>
-                    <Link href="/donate">
-                      <Button className="gap-2"><Heart className="w-4 h-4" />ابدأ بالتبرع</Button>
-                    </Link>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {donations.map((donation: any, i: number) => (
-                      <div key={donation.id || i} className="flex items-center justify-between p-4 rounded-xl border hover:bg-muted/20 transition-colors" data-testid={`donation-row-${i}`}>
-                        <div className="flex items-center gap-3">
-                          <div className={cn("p-2.5 rounded-xl", {
-                            "bg-green-100 text-green-700": donation.status === "confirmed",
-                            "bg-red-100 text-red-700": donation.status === "rejected",
-                            "bg-amber-100 text-amber-700": !donation.status || donation.status === "pending",
-                          })}>
-                            {donation.status === "confirmed" ? <CheckCircle2 className="w-5 h-5" /> :
-                             donation.status === "rejected" ? <XCircle className="w-5 h-5" /> :
-                             <Clock className="w-5 h-5" />}
-                          </div>
-                          <div>
-                            <p className="font-bold text-sm">{Number(donation.amount || 0).toLocaleString("ar-SA")} ريال</p>
-                            <p className="text-xs text-muted-foreground">
-                              {donationTypeLabel(donation.type)} — {donation.createdAt ? new Date(donation.createdAt).toLocaleDateString("ar-SA") : "—"}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge className={cn("text-xs font-bold", {
-                            "bg-green-100 text-green-700": donation.status === "confirmed",
-                            "bg-red-100 text-red-700": donation.status === "rejected",
-                            "bg-amber-100 text-amber-700": !donation.status || donation.status === "pending",
-                          })}>
-                            {donation.status === "confirmed" ? "مؤكد" :
-                             donation.status === "rejected" ? "مرفوض" : "قيد المراجعة"}
-                          </Badge>
-                          {donation.status === "confirmed" && (
-                            <div className="flex gap-1">
-                              <Button size="icon" variant="ghost" className="h-8 w-8" title="الفاتورة">
-                                <FileText className="h-4 w-4 text-muted-foreground" />
-                              </Button>
-                              <Button size="icon" variant="ghost" className="h-8 w-8" title="الشهادة">
-                                <Award className="h-4 w-4 text-amber-500" />
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* ── Tab: Recurring ── */}
-          <TabsContent value="recurring">
-            <Card className="border-0 shadow-sm">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base font-bold flex items-center gap-2">
-                    <RefreshCw className="w-5 h-5 text-primary" />
-                    التبرعات الدورية
-                  </CardTitle>
-                  <Badge variant="secondary">{activeRecurring.length} اشتراك نشط</Badge>
-                </div>
-                <CardDescription>اشتراكاتك الشهرية والأسبوعية المتكررة</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {recurring.length === 0 ? (
-                  <div className="text-center py-12">
-                    <RefreshCw className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
-                    <p className="text-muted-foreground font-medium mb-2">لا يوجد اشتراكات دورية بعد</p>
-                    <p className="text-xs text-muted-foreground mb-4">يمكنك تفعيل التبرع الشهري أو الأسبوعي من صفحة التبرع</p>
-                    <Link href="/donate">
-                      <Button variant="outline" className="gap-2"><RefreshCw className="w-4 h-4" />اشترك الآن</Button>
-                    </Link>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {recurring.map((r: any, i: number) => (
-                      <div key={r._id || i} className="p-4 rounded-xl border" data-testid={`recurring-row-${i}`}>
-                        <div className="flex items-center justify-between flex-wrap gap-3">
-                          <div className="flex items-center gap-3">
-                            <div className={cn("p-2.5 rounded-xl", {
-                              "bg-green-100 text-green-700": r.status === "active",
-                              "bg-amber-100 text-amber-700": r.status === "paused",
-                              "bg-red-100 text-red-700": r.status === "cancelled",
-                            })}>
-                              <RefreshCw className="w-5 h-5" />
-                            </div>
-                            <div>
-                              <p className="font-bold text-sm">{Number(r.amount || 0).toLocaleString("ar-SA")} ريال / {r.frequency === "monthly" ? "شهر" : "أسبوع"}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {donationTypeLabel(r.type)}
-                                {r.nextChargeDate && ` — الدفعة القادمة: ${new Date(r.nextChargeDate).toLocaleDateString("ar-SA")}`}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <Badge className={cn("text-xs", {
-                              "bg-green-100 text-green-700": r.status === "active",
-                              "bg-amber-100 text-amber-700": r.status === "paused",
-                              "bg-red-100 text-red-700": r.status === "cancelled",
-                            })}>
-                              {r.status === "active" ? "نشط" : r.status === "paused" ? "موقوف" : "ملغي"}
-                            </Badge>
-                            {r.status !== "cancelled" && (
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button size="sm" variant="outline" className="gap-1 h-8 text-xs text-primary border-primary/30 hover:bg-primary/5"
-                                    data-testid={`button-calendar-recurring-${i}`}>
-                                    <CalendarPlus className="w-3 h-3" /> أضف للتقويم
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-56">
-                                  <DropdownMenuLabel className="text-xs text-muted-foreground">اختر تقويمك</DropdownMenuLabel>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    className="gap-2 cursor-pointer"
-                                    onClick={() => window.open(getGoogleCalendarLink(r), "_blank")}
-                                    data-testid={`button-gcal-recurring-${i}`}
-                                  >
-                                    <CalendarCheck className="w-4 h-4 text-blue-600" />
-                                    <span>Google Calendar</span>
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    className="gap-2 cursor-pointer"
-                                    onClick={() => downloadICS(r)}
-                                    data-testid={`button-ics-recurring-${i}`}
-                                  >
-                                    <CalendarPlus className="w-4 h-4 text-gray-600" />
-                                    <div className="flex flex-col">
-                                      <span>تقويم آيفون / أندرويد</span>
-                                      <span className="text-[10px] text-muted-foreground">تنزيل ملف .ics</span>
-                                    </div>
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <div className="px-2 py-1.5">
-                                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                                      سيُضاف حدث متكرر مع تذكير قبل يوم من كل دفعة
-                                    </p>
-                                  </div>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            )}
-                            {r.status === "active" && (
-                              <Button size="sm" variant="outline" className="gap-1 h-8 text-xs"
-                                onClick={() => updateRecurringMutation.mutate({ id: r._id, status: "paused" })}
-                                disabled={updateRecurringMutation.isPending}
-                                data-testid={`button-pause-recurring-${i}`}
-                              >
-                                <Pause className="w-3 h-3" /> إيقاف مؤقت
-                              </Button>
-                            )}
-                            {r.status === "paused" && (
-                              <Button size="sm" variant="outline" className="gap-1 h-8 text-xs text-green-700 border-green-300"
-                                onClick={() => updateRecurringMutation.mutate({ id: r._id, status: "active" })}
-                                disabled={updateRecurringMutation.isPending}
-                                data-testid={`button-resume-recurring-${i}`}
-                              >
-                                <Play className="w-3 h-3" /> استئناف
-                              </Button>
-                            )}
-                            {r.status !== "cancelled" && (
-                              <Button size="sm" variant="ghost" className="gap-1 h-8 text-xs text-red-600 hover:bg-red-50"
-                                onClick={() => deleteRecurringMutation.mutate(r._id)}
-                                disabled={deleteRecurringMutation.isPending}
-                                data-testid={`button-cancel-recurring-${i}`}
-                              >
-                                <Ban className="w-3 h-3" /> إلغاء
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                        {r.chargeCount > 0 && (
-                          <div className="mt-3 pt-3 border-t flex items-center gap-4 text-xs text-muted-foreground">
-                            <span>عدد الدفعات: <b className="text-foreground">{r.chargeCount}</b></span>
-                            <span>الإجمالي المدفوع: <b className="text-primary">{Number(r.totalCharged || 0).toLocaleString("ar-SA")} ر.س</b></span>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* ── Tab: Points ── */}
-          <TabsContent value="points">
-            <div className="space-y-4">
-              {/* Points hero */}
-              <Card className="border-0 shadow-sm overflow-hidden">
-                <div className="p-6 text-center" style={{ background: "linear-gradient(135deg, hsl(38 85% 40%) 0%, hsl(38 85% 55%) 100%)" }}>
-                  <div className="text-5xl font-black text-white mb-1">{(user.points || 0).toLocaleString("ar-SA")}</div>
-                  <p className="text-white/80 text-sm">نقطة عطاء</p>
-                  <Badge className={cn("mt-3 font-bold text-sm", tier.color)}>
-                    {tier.icon} المستوى {tier.label}
-                  </Badge>
-                </div>
-                <CardContent className="p-5">
-                  <div className="grid grid-cols-3 gap-4 text-center">
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">النقاط من التبرعات</p>
-                      <p className="font-black text-lg text-yellow-600">{(confirmedDonations.reduce((s: number, d: any) => s + (d.amount || 0), 0) * 10).toLocaleString("ar-SA")}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">المستوى التالي</p>
-                      <p className="font-black text-lg text-primary">
-                        {(user.points || 0) < 5000 ? "5,000" :
-                         (user.points || 0) < 20000 ? "20,000" :
-                         (user.points || 0) < 50000 ? "50,000" : "MAX"} نقطة
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">معدل الاكتساب</p>
-                      <p className="font-black text-lg text-green-600">10 نقطة / ريال</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* How to earn */}
-              <Card className="border-0 shadow-sm">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base font-bold flex items-center gap-2">
-                    <Gift className="w-5 h-5 text-yellow-500" />
-                    كيف تكسب نقاطاً؟
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {[
-                    { icon: Heart, label: "كل تبرع مؤكد", points: "10 نقطة / ريال", color: "text-red-500 bg-red-50" },
-                    { icon: RefreshCw, label: "التبرع الشهري المنتظم", points: "+20% مكافأة", color: "text-green-600 bg-green-50" },
-                    { icon: Star, label: "التبرع في المناسبات (رمضان)", points: "+50% مكافأة", color: "text-yellow-600 bg-yellow-50" },
-                    { icon: TrendingUp, label: "أول تبرع لك", points: "500 نقطة مكافأة", color: "text-blue-600 bg-blue-50" },
-                  ].map((item, i) => (
-                    <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-muted/30">
-                      <div className="flex items-center gap-3">
-                        <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", item.color)}>
-                          <item.icon className="w-4 h-4" />
-                        </div>
-                        <p className="text-sm font-medium">{item.label}</p>
-                      </div>
-                      <Badge variant="secondary" className="font-bold text-xs">{item.points}</Badge>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-
-              {/* Tiers */}
-              <Card className="border-0 shadow-sm">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base font-bold flex items-center gap-2">
-                    <Award className="w-5 h-5 text-amber-500" />
-                    مستويات الداعمين
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {[
-                    { label: "برونزي", range: "0 – 4,999", icon: "🥉", color: "bg-amber-100 text-amber-700", min: 0 },
-                    { label: "فضي", range: "5,000 – 19,999", icon: "🥈", color: "bg-gray-100 text-gray-700", min: 5000 },
-                    { label: "ذهبي", range: "20,000 – 49,999", icon: "🥇", color: "bg-yellow-100 text-yellow-700", min: 20000 },
-                    { label: "بلاتيني", range: "+50,000", icon: "💎", color: "bg-purple-100 text-purple-700", min: 50000 },
-                  ].map((t, i) => (
-                    <div key={i} className={cn("flex items-center justify-between p-3 rounded-xl border-2", (user.points || 0) >= t.min ? "border-primary/20" : "border-transparent bg-muted/20")}>
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">{t.icon}</span>
-                        <div>
-                          <p className="font-bold text-sm">{t.label}</p>
-                          <p className="text-xs text-muted-foreground">{t.range} نقطة</p>
-                        </div>
-                      </div>
-                      {(user.points || 0) >= t.min && <Badge className="bg-primary text-white text-xs">مستواك الحالي</Badge>}
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          {/* ── Tab: Security ── */}
-          <TabsContent value="settings">
-            <Card className="border-0 shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-base font-bold flex items-center gap-2">
-                  <Shield className="w-5 h-5 text-primary" />
-                  الأمان والخصوصية
-                </CardTitle>
-                <CardDescription>تحكم في طرق الدخول وظهور معلوماتك</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-                  <div className="flex items-center gap-2 font-bold text-emerald-900">
-                    <Shield className="h-4 w-4" />
-                    الدخول برمز الجوال فقط
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-emerald-900/80">
-                    لا توجد كلمة مرور أو بصمة للدخول. أرسل رمز تحقق إلى رقم جوالك عند تسجيل الدخول.
-                    إذا تغيّر رقمك، تواصل مع إدارة الجمعية لتحديثه بعد التحقق من هويتك.
-                  </p>
-                </div>
-
-                {/* Public profile toggle */}
-                <div className="flex items-center justify-between py-4 border-t">
-                  <div className="space-y-1">
-                    <Label htmlFor="public-profile" className="text-base font-medium">الظهور في قائمة الشرف</Label>
-                    <p className="text-sm text-muted-foreground">عند التفعيل يظهر اسمك في صفحة قائمة الشرف العامة</p>
-                  </div>
-                  <Switch id="public-profile" checked={user.isPublicDonor || false} onCheckedChange={checked => togglePrivacy(checked)} />
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
-
-        {/* Quick action */}
-        <div className="mt-6 flex justify-end">
-          <Link href="/donate">
-            <Button className="gap-2 shadow-sm">
-              <Heart className="w-4 h-4" />
-              تبرع جديد
-            </Button>
-          </Link>
-        </div>
-      </main>
-
-      <Footer />
-    </div>
-  );
+            <Tabs defaultValue="donations" dir="rtl">
+              <TabsList className="ap-tabs" aria-label="أقسام الحساب">
+                <TabsTrigger value="donations" data-testid="tab-donations"><History />تبرعاتي وإيصالاتي</TabsTrigger>
+                <TabsTrigger value="recurring" data-testid="tab-recurring"><RefreshCw />التبرعات الدورية</TabsTrigger>
+                <TabsTrigger value="settings" data-testid="tab-settings"><ShieldCheck />الخصوصية</TabsTrigger>
+              </TabsList>
+              <TabsContent value="donations">
+                <section className="ap-panel">
+                  <div className="ap-panel-heading"><div><h2>سجلّ العطاء</h2><p>تابع حالة تبرعاتك. الإيصالات الصادرة متاحة للعرض والطباعة أسفل السجل.</p></div><span className="ap-small">الأحدث أولاً</span></div>
+                  {donationsQuery.isPending && userId ? <LoadingRows />
+                    : donationsQuery.isError || !userId ? <QueryError retry={() => { if (userId) void donationsQuery.refetch(); else void authState.refetch(); }} pending={donationsQuery.isFetching || authState.isFetching} />
+                      : donations.length === 0 ? <div className="ap-empty"><Heart /><h3>هنا يبدأ سجلّ عطائك</h3><p>ليس لديك تبرعات مسجّلة حتى الآن. ستظهر تبرعاتك وحالتها هنا عند تسجيلها.</p><Link href="/campaigns" className="ap-button ap-button-primary">استعرض الحملات<ArrowLeft /></Link></div>
+                        : <><div className="ap-filters" aria-label="تصفية التبرعات">{([
+                          ["all", "الكل"], ["confirmed", "المؤكدة"], ["pending", "قيد المراجعة"],
+                        ] as const).map(([value, label]) => <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>)}</div>
+                          {visible.length ? visible.map((donation, index) => <DonationRow key={donation._id || donation.id || index} donation={donation} index={index} />)
+                            : <div className="ap-empty"><FileText /><h3>لا توجد تبرعات بهذه الحالة</h3><p>يمكنك العودة إلى السجل الكامل لرؤية بقية تبرعاتك.</p><button className="ap-button" onClick={() => setFilter("all")}>عرض الكل</button></div>}
+                        </>}
+                </section>
+                <InvoicePanel key={accountId} accountId={accountId} />
+              </TabsContent>
+              <TabsContent value="recurring">
+                <section className="ap-panel">
+                  <div className="ap-panel-heading"><div><h2>التبرعات الدورية</h2><p>إدارة سجلات التبرعات المتكررة. وجود سجل دوري لا يعني تأكيد سداد المبلغ.</p></div></div>
+                  {recurringQuery.isPending ? <LoadingRows /> : recurringQuery.isError ? <QueryError retry={() => { void recurringQuery.refetch(); }} pending={recurringQuery.isFetching} />
+                    : recurring.length === 0 ? <div className="ap-empty"><RefreshCw /><h3>لا توجد تبرعات دورية</h3><p>إذا كان لديك تبرع دوري مسجّل، فسيظهر هنا لتتمكن من إدارته.</p></div>
+                      : recurring.map((r, index) => {
+                        const id = r._id || r.id;
+                        const label = ({ active: "نشط", paused: "موقوف مؤقتاً", completed: "مكتمل", cancelled: "ملغي" } as Record<string, string>)[r.status] || "الحالة غير متاحة";
+                        return <article className="ap-donation" key={id || index} data-testid={`recurring-row-${index}`}>
+                          <div className="ap-donation-top"><h3>{donationLabel(r.type)}</h3><span className="ap-amount">{amount(r.amount)} <small>ر.س / {r.frequency === "daily" ? "يوم" : r.frequency === "monthly" ? "شهر" : r.frequency === "weekly" ? "أسبوع" : r.frequency}</small></span></div>
+                          <div className="ap-donation-meta"><span className={`ap-status ${r.status === "active" ? "" : "ap-neutral"}`}>{label}</span>
+                            {r.nextChargeDate && r.status === "active" && <span>الموعد المسجّل القادم: {dateLabel(r.nextChargeDate)}</span>}</div>
+                          {(r.status === "active" || r.status === "paused") && <div className="ap-recurring-actions">
+                            <button className="ap-button" disabled={!id || recurringMutation.isPending || cancelMutation.isPending} onClick={() => id && recurringMutation.mutate({ id, status: r.status === "active" ? "paused" : "active" })}>
+                              {r.status === "active" ? <Pause /> : <Play />}{recurringMutation.isPending && recurringMutation.variables?.id === id ? "جارٍ التحديث…" : r.status === "active" ? "إيقاف مؤقت" : "استئناف"}
+                            </button>
+                            <button className="ap-button ap-button-danger" disabled={!id || recurringMutation.isPending || cancelMutation.isPending} onClick={() => { cancelMutation.reset(); setCancelTarget(r); }}><Ban />إلغاء التبرع الدوري</button>
+                          </div>}
+                          {recurringMutation.isError && recurringMutation.variables?.id === id && <p role="alert" className="ap-inline-error">تعذّر تحديث الحالة. لم يُحفظ التغيير؛ أعد المحاولة من الزر أعلاه.</p>}
+                        </article>;
+                      })}
+                </section>
+              </TabsContent>
+              <TabsContent value="settings">
+                <section className="ap-panel">
+                  <div className="ap-panel-heading"><div><h2>خصوصيتك أولاً</h2><p>اختر كيف يظهر اسمك في قائمة الداعمين العامة.</p></div></div>
+                  <div className="ap-privacy"><ShieldCheck aria-hidden="true" /><div className="ap-privacy-copy"><label htmlFor="public-donor">إظهار اسمي في قائمة الداعمين</label><p id="public-donor-description">عند تعطيل الخيار لن يظهر اسمك في القائمة العامة. لا يغيّر ذلك بيانات حسابك أو سجلّ تبرعاتك.</p></div>
+                    <Switch id="public-donor" checked={!!user.isPublicDonor} disabled={privacyPending} onCheckedChange={changePrivacy} aria-describedby="public-donor-description" data-testid="switch-privacy" /></div>
+                  <p className="ap-small mt-3" role="status">{privacyPending ? "جارٍ حفظ اختيارك…" : user.isPublicDonor ? "اسمك ظاهر في قائمة الداعمين." : "اسمك مخفي من قائمة الداعمين."}</p>
+                  {privacyError && <div className="ap-inline-error" role="alert"><p>تعذّر حفظ إعداد الخصوصية. بقي اختيارك السابق دون تغيير.</p><button className="ap-button mt-2" disabled={privacyPending} onClick={() => { void changePrivacy(!user.isPublicDonor); }}>إعادة المحاولة</button></div>}
+                  <div className="ap-security-note"><LockKeyhole aria-hidden="true" /><p>دخول حساب المتبرع عبر رمز التحقق المرسل إلى رقم الجوال. لا تشارك رمز الدخول مع أي شخص.</p></div>
+                </section>
+              </TabsContent>
+            </Tabs>
+          </>}
+    </main>
+    <Footer />
+    <Dialog open={isEditing} onOpenChange={open => { if (!profileMutation.isPending) setIsEditing(open); }}>
+      <DialogContent className="ap-dialog" dir="rtl">
+        <DialogHeader className="text-right"><DialogTitle>بياناتك الشخصية</DialogTitle><DialogDescription>حدّث اسمك وبريدك. عرض الإيصالات وطباعتها لا يتطلب إضافة بريد إلكتروني.</DialogDescription></DialogHeader>
+        <form className="ap-form" onSubmit={event => { event.preventDefault(); if (editData.name.trim()) profileMutation.mutate({ name: editData.name.trim(), email: editData.email.trim() }); }}>
+          <div><label htmlFor="profile-name">الاسم</label><Input id="profile-name" required maxLength={120} autoComplete="name" value={editData.name} disabled={profileMutation.isPending} onChange={e => setEditData(p => ({ ...p, name: e.target.value }))} data-testid="input-edit-name" /></div>
+          <div><label htmlFor="profile-email">البريد الإلكتروني <span className="ap-small">(اختياري)</span></label><Input id="profile-email" type="email" maxLength={254} autoComplete="email" dir="ltr" value={editData.email} disabled={profileMutation.isPending} onChange={e => setEditData(p => ({ ...p, email: e.target.value }))} data-testid="input-edit-email" /></div>
+          {profileMutation.isError && <p className="ap-inline-error" role="alert">تعذّر حفظ بياناتك. لم تفقد تعديلاتك؛ حاول الحفظ مرة أخرى.</p>}
+          <div className="ap-form-footer"><button type="submit" className="ap-button ap-button-primary" disabled={profileMutation.isPending || !editData.name.trim()} data-testid="button-save-profile"><Save />{profileMutation.isPending ? "جارٍ الحفظ…" : "حفظ التعديلات"}</button><button type="button" className="ap-button" disabled={profileMutation.isPending} onClick={() => setIsEditing(false)}>إلغاء</button></div>
+        </form>
+      </DialogContent>
+    </Dialog>
+    <AlertDialog open={!!cancelTarget} onOpenChange={open => { if (!open && !cancelMutation.isPending) setCancelTarget(null); }}>
+      <AlertDialogContent className="ap-dialog" dir="rtl">
+        <AlertDialogHeader className="text-right"><AlertDialogTitle>إلغاء التبرع الدوري؟</AlertDialogTitle><AlertDialogDescription>سيُحذف هذا السجل الدوري. لن تتأثر التبرعات السابقة المسجّلة. إذا أردت التوقف لفترة فقط، استخدم الإيقاف المؤقت بدلاً من الإلغاء.</AlertDialogDescription></AlertDialogHeader>
+        {cancelMutation.isError && <p className="ap-inline-error" role="alert">تعذّر الإلغاء. لم يتغير السجل؛ أعد المحاولة.</p>}
+        <AlertDialogFooter className="gap-2"><AlertDialogCancel disabled={cancelMutation.isPending}>الاحتفاظ بالتبرع الدوري</AlertDialogCancel><button className="ap-button ap-button-danger" disabled={cancelMutation.isPending} onClick={() => { const id = cancelTarget?._id || cancelTarget?.id; if (id) cancelMutation.mutate(id); }}>{cancelMutation.isPending ? "جارٍ الإلغاء…" : "تأكيد الإلغاء"}</button></AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </div>;
 }

@@ -1,5 +1,8 @@
 import type { Request, Response, NextFunction } from "express";
-import { Db } from "mongodb";
+import { Db, ObjectId } from "mongodb";
+import { albayanFaq } from "../shared/albayan-faq";
+import { quranPrograms } from "../shared/quran-programs";
+import { requireAuth, requireRole } from "./core/auth.middleware";
 
 const SITE_NAME = "جمعية مقارئ البيان لتعليم القرآن الكريم للناطقين بغير العربية";
 const SITE_NAME_EN = "Al Bayan Association for Teaching the Quran to Non-Arabic Speakers";
@@ -184,7 +187,7 @@ const PROGRAM_SEO = {
 };
 
 const STATIC_SEO: Record<string, { title: string; description: string; image: string; keywords?: string }> = {
-  "/": { ...PROGRAM_SEO, title: SITE_NAME, description: SITE_DESC_DEFAULT },
+  "/": { ...PROGRAM_SEO, title: "جمعية مقارئ البيان | تعليم وتحفيظ القرآن الكريم", description: "تعرّف على جمعية مقارئ البيان بالرياض، ترخيص 1000863300، وبرامج تعليم وتحفيظ القرآن للناطقين بغير العربية ومشاريعها وحالة قنوات التبرع الرسمية." },
   "/services": PROGRAM_SEO,
   "/services/recitation": { ...PROGRAM_SEO, title: "تصحيح التلاوة | مقارئ البيان" },
   "/services/hifz": { ...PROGRAM_SEO, title: "حفظ القرآن الكريم | مقارئ البيان" },
@@ -192,18 +195,18 @@ const STATIC_SEO: Record<string, { title: string; description: string; image: st
   "/services/revision": { ...PROGRAM_SEO, title: "مراجعة القرآن الكريم | مقارئ البيان" },
   "/donate": {
     ...PROGRAM_SEO,
-    title: "قنوات المساهمة قيد الإعداد | مقارئ البيان",
-    description: "لن تُتاح المساهمات حتى اعتماد بيانات الدفع الخاصة بمقارئ البيان.",
+    title: "التبرع لتعليم القرآن وحالة قنوات الدفع | مقارئ البيان",
+    description: "تحقق من حالة قنوات التبرع الرسمية لجمعية مقارئ البيان لتعليم القرآن الكريم. لا تُتاح المدفوعات إلا بعد اعتمادها باسم الجمعية.",
   },
   "/bank-transfer": {
     ...PROGRAM_SEO,
     title: "بيانات التحويل البنكي قيد الإعداد | مقارئ البيان",
     description: "بيانات التحويل البنكي لمقارئ البيان قيد الإعداد.",
   },
-  "/about": { ...PROGRAM_SEO, title: "من نحن | مقارئ البيان" },
+  "/about": { ...PROGRAM_SEO, title: "عن جمعية مقارئ البيان ورقم الترخيص", description: SITE_DESC_DEFAULT },
   "/contact": { ...PROGRAM_SEO, title: "تواصل معنا | مقارئ البيان" },
-  "/faq": { ...PROGRAM_SEO, title: "الأسئلة الشائعة | مقارئ البيان" },
-  "/campaigns": PROGRAM_SEO,
+  "/faq": { ...PROGRAM_SEO, title: "أسئلة عن تعليم القرآن والتبرع | مقارئ البيان", description: "إجابات عن جمعية مقارئ البيان وبرامج تعليم القرآن، والحملات المنشورة، وحالة قنوات المساهمة الرسمية." },
+  "/campaigns": { ...PROGRAM_SEO, title: "مشاريع تعليم القرآن وفرص التبرع | مقارئ البيان", description: "استعرض المشاريع المنشورة لجمعية مقارئ البيان وميزانياتها وتفاصيلها. تحقق من اعتماد قنوات التبرع قبل المساهمة في تعليم القرآن الكريم." },
   "/leaderboard": PROGRAM_SEO,
   "/volunteer": PROGRAM_SEO,
   "/jobs": PROGRAM_SEO,
@@ -221,6 +224,17 @@ const STATIC_SEO: Record<string, { title: string; description: string; image: st
 };
 
 const LEGACY_BRAND_MARKERS = /طويق|tuwaiq|1000820300|6573|0505793012|tuwaiqassociation/i;
+
+STATIC_SEO["/programs"] = {
+  ...PROGRAM_SEO,
+  title: "برامج وحلقات تعليم القرآن الكريم | مقارئ البيان",
+  description: "تعرف على حلقات حفظ القرآن وتصحيح التلاوة لدى جمعية مقارئ البيان، والفرق بين التعرف على البرامج والتسجيل فيها ودعمها.",
+};
+for (const program of quranPrograms) {
+  STATIC_SEO[`/programs/${program.slug}`] = {
+    ...PROGRAM_SEO, title: `${program.title} | مقارئ البيان`, description: program.description,
+  };
+}
 
 // ── Schemas ────────────────────────────────────────────────────────────────────
 
@@ -360,14 +374,6 @@ function buildWebsiteSchema(baseUrl: string): string {
     "name": SITE_NAME,
     "inLanguage": "ar",
     "publisher": { "@id": `${baseUrl}/#organization` },
-    "potentialAction": {
-      "@type": "SearchAction",
-      "target": {
-        "@type": "EntryPoint",
-        "urlTemplate": `${baseUrl}/campaigns?q={search_term_string}`,
-      },
-      "query-input": "required name=search_term_string",
-    },
   });
 }
 
@@ -551,11 +557,7 @@ function buildAlBayanOrganizationSchema(baseUrl: string): string {
 }
 
 function buildAlBayanFAQSchema(): string {
-  const questions = [
-    ["ما برامج مقارئ البيان؟", "تقدم مقارئ البيان مسارات للتلاوة الصحيحة وحفظ القرآن والتجويد والمراجعة."],
-    ["كيف أتعرف على تفاصيل البرامج؟", "تواصل معنا من خلال نموذج التواصل لمعرفة التفاصيل المتاحة."],
-    ["كيف أستفسر عن مواعيد الالتحاق؟", "أرسل استفسارك عبر نموذج التواصل الموجود في الموقع."],
-  ];
+  const questions = albayanFaq.map(({ title, answer }) => [title, answer]);
   return JSON.stringify({
     "@context": "https://schema.org",
     "@type": "FAQPage",
@@ -622,6 +624,7 @@ function buildHtml(params: {
   const pageLabel = label || title.split("|")[0].trim();
 
   const isHome = path === "/";
+  const program = quranPrograms.find(item => path === `/programs/${item.slug}`);
 
   const schemas = [
     buildAlBayanOrganizationSchema(url),
@@ -637,11 +640,14 @@ function buildHtml(params: {
     <p>${escapeHtml(SITE_NAME)} — برامج للتلاوة والحفظ والتجويد والمراجعة</p>
     <nav>
       <a href="${escapeHtml(url)}">الرئيسية</a> |
-      <a href="${escapeHtml(url)}/services">البرامج التعليمية</a> |
+      <a href="${escapeHtml(url)}/campaigns">مشاريع تعليم القرآن</a> |
       <a href="${escapeHtml(url)}/about">من نحن</a> |
-      <a href="${escapeHtml(url)}/contact">تواصل معنا</a>
+      <a href="${escapeHtml(url)}/faq">الأسئلة الشائعة</a>
     </nav>
     <a href="${escapeHtml(canonical)}">زيارة الصفحة</a>
+    ${isHome ? albayanFaq.map(({ title, answer }) => `<h2>${escapeHtml(title)}</h2><p>${escapeHtml(answer)}</p>`).join("") : ""}
+    ${program ? program.sections.map(section => `<h2>${escapeHtml(section.title)}</h2><p>${escapeHtml(section.text)}</p>`).join("") : ""}
+    ${path === "/programs" ? quranPrograms.map(item => `<h2><a href="${escapeHtml(url)}/programs/${item.slug}">${escapeHtml(item.title)}</a></h2><p>${escapeHtml(item.description)}</p>`).join("") : ""}
   `;
 
   return `<!DOCTYPE html>
@@ -663,8 +669,6 @@ function buildHtml(params: {
   <meta property="og:title" content="${escapeHtml(title)}" />
   <meta property="og:description" content="${escapeHtml(description)}" />
   <meta property="og:image" content="${escapeHtml(absImage)}" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="${escapeHtml(SITE_NAME)}" />
   <meta property="og:url" content="${escapeHtml(canonical)}" />
   <meta property="og:locale" content="ar_SA" />
@@ -679,9 +683,8 @@ function buildHtml(params: {
   <meta name="twitter:image:alt" content="${escapeHtml(SITE_NAME)}" />
 
   <!-- Structured Data -->
-  ${schemas.map((s) => `<script type="application/ld+json">${s}</script>`).join("\n  ")}
+  ${schemas.map((s) => `<script type="application/ld+json">${s.replace(/</g, "\\u003c")}</script>`).join("\n  ")}
 
-  <meta http-equiv="refresh" content="0;url=${escapeHtml(canonical)}" />
 </head>
 <body>
   <noscript>${noscriptText}</noscript>
@@ -698,11 +701,16 @@ export function createSEOMiddleware(db: Db) {
     if (req.path.startsWith("/images/")) return next();
     if (req.path.includes(".")) return next();
 
-    const ua = req.headers["user-agent"] || "";
-    if (!isBot(ua)) return next();
+    if (/^\/(?:admin|employee|delivery|profile|login|register|notifications|certificates|track-donation|donation-success|payment-result|payment-gateway-done|setup-password)(?:\/|$)/.test(req.path)) {
+      res.locals.seoNoindex = true;
+      res.setHeader("X-Robots-Tag", "noindex, nofollow");
+      res.setHeader("Cache-Control", "private, no-store");
+      return next();
+    }
+    res.setHeader("Cache-Control", "no-cache");
 
     const path = req.path;
-    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
+    const baseUrl = (process.env.BASE_URL || process.env.APP_URL || `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
     const canonical = `${baseUrl}${path}`;
 
     let seoData: { title: string; description: string; image: string; keywords?: string } | null = null;
@@ -756,7 +764,10 @@ export function createSEOMiddleware(db: Db) {
       const campaignMatch = path.match(/^\/campaigns\/(.+)$/);
       if (campaignMatch) {
         try {
-          const campaign = await withTimeout(db.collection("campaigns").findOne({ slug: campaignMatch[1] }));
+          const campaign = await withTimeout(db.collection("campaigns").findOne({
+            ...(ObjectId.isValid(campaignMatch[1]) ? { _id: new ObjectId(campaignMatch[1]) } : { slug: campaignMatch[1] }),
+            isActive: true, isPublic: true, associationName: SITE_NAME, licenseNumber: "1000863300",
+          }));
           if (campaign) {
             const name = campaign.name || campaign.title;
             seoData = {
@@ -801,6 +812,8 @@ export function createSEOMiddleware(db: Db) {
 
     // 6. Fallback
     if (!seoData) {
+      res.locals.seoNoindex = true;
+      res.setHeader("X-Robots-Tag", "noindex, follow");
       seoData = {
         title: SITE_NAME,
         description: SITE_DESC_DEFAULT,
@@ -826,9 +839,8 @@ export function createSEOMiddleware(db: Db) {
       path,
     });
 
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=86400");
-    res.status(200).send(html);
+    res.locals.seoDocument = html;
+    next();
     } catch (err) {
       // On any unexpected error, fall through to normal Express handling
       console.error("[SEO middleware] unexpected error:", (err as any)?.message);
@@ -850,76 +862,48 @@ function xmlEscape(str: string): string {
 const STATIC_PAGES = [
   { loc: "/", priority: "1.0", changefreq: "daily" },
   { loc: "/donate", priority: "0.9", changefreq: "weekly" },
-  { loc: "/bank-transfer", priority: "0.8", changefreq: "monthly" },
-  { loc: "/services", priority: "0.9", changefreq: "weekly" },
   { loc: "/campaigns", priority: "0.9", changefreq: "daily" },
   { loc: "/about", priority: "0.8", changefreq: "monthly" },
-  { loc: "/contact", priority: "0.7", changefreq: "monthly" },
-  { loc: "/leaderboard", priority: "0.6", changefreq: "daily" },
-  { loc: "/volunteer", priority: "0.7", changefreq: "monthly" },
-  { loc: "/jobs", priority: "0.6", changefreq: "weekly" },
-  { loc: "/zakat", priority: "0.7", changefreq: "monthly" },
+  { loc: "/faq", priority: "0.8", changefreq: "monthly" },
   { loc: "/impact", priority: "0.7", changefreq: "weekly" },
-  { loc: "/bank-accounts", priority: "0.5", changefreq: "monthly" },
+  { loc: "/programs", priority: "0.8", changefreq: "monthly" },
+  ...quranPrograms.map(program => ({ loc: `/programs/${program.slug}`, priority: "0.8", changefreq: "monthly" })),
 ];
 
 export function registerSitemapRoute(app: any, db: Db) {
+  app.get("/robots.txt", (req: Request, res: Response) => {
+    const baseUrl = (process.env.BASE_URL || process.env.APP_URL || `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
+    res.type("text/plain").send(`User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nDisallow: /employee\nDisallow: /delivery\nSitemap: ${baseUrl}/sitemap.xml\n`);
+  });
   app.get("/sitemap.xml", async (req: Request, res: Response) => {
-    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get("host")}`;
-    const now = new Date().toISOString().split("T")[0];
+    const baseUrl = (process.env.BASE_URL || process.env.APP_URL || `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
 
-    const urls: { loc: string; lastmod: string; changefreq: string; priority: string }[] =
+    const urls: { loc: string; lastmod?: string; changefreq: string; priority: string }[] =
       STATIC_PAGES.map((p) => ({
         loc: `${baseUrl}${p.loc}`,
-        lastmod: now,
         changefreq: p.changefreq,
         priority: p.priority,
       }));
 
-    // Dynamic: services
-    try {
-      const services = await db.collection("services").find({ isActive: { $ne: false } }).toArray();
-      for (const s of services) {
-        if (s.slug) {
-          urls.push({
-            loc: `${baseUrl}/services/${xmlEscape(s.slug)}`,
-            lastmod: s.updatedAt ? new Date(s.updatedAt).toISOString().split("T")[0] : now,
-            changefreq: "weekly",
-            priority: "0.8",
-          });
-        }
-      }
-    } catch {}
-
     // Dynamic: campaigns
     try {
-      const campaigns = await db.collection("campaigns").find({ isActive: { $ne: false } }).toArray();
+      const campaigns = await db.collection("campaigns").find({
+        isActive: true, isPublic: true, associationName: SITE_NAME, licenseNumber: "1000863300",
+      }).toArray();
       for (const c of campaigns) {
-        if (c.slug) {
+        if (c._id) {
+          const modified = c.updatedAt ? new Date(c.updatedAt) : null;
           urls.push({
-            loc: `${baseUrl}/campaigns/${xmlEscape(c.slug)}`,
-            lastmod: c.updatedAt ? new Date(c.updatedAt).toISOString().split("T")[0] : now,
+            loc: `${baseUrl}/campaigns/${encodeURIComponent(String(c._id))}`,
+            lastmod: modified && Number.isFinite(modified.getTime()) ? modified.toISOString().split("T")[0] : undefined,
             changefreq: "daily",
             priority: "0.8",
           });
         }
       }
-    } catch {}
-
-    // Dynamic: content pages
-    try {
-      const pages = await db.collection("content").find({ isPublished: { $ne: false } }).toArray();
-      for (const p of pages) {
-        if (p.slug && !["admin", "employee", "login"].includes(p.slug)) {
-          urls.push({
-            loc: `${baseUrl}/page/${xmlEscape(p.slug)}`,
-            lastmod: p.updatedAt ? new Date(p.updatedAt).toISOString().split("T")[0] : now,
-            changefreq: "monthly",
-            priority: "0.5",
-          });
-        }
-      }
-    } catch {}
+    } catch {
+      return res.status(503).type("text/plain").send("Sitemap temporarily unavailable");
+    }
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
@@ -927,8 +911,8 @@ export function registerSitemapRoute(app: any, db: Db) {
 ${urls
   .map(
     (u) => `  <url>
-    <loc>${u.loc}</loc>
-    <lastmod>${u.lastmod}</lastmod>
+    <loc>${xmlEscape(u.loc)}</loc>
+    ${u.lastmod ? `<lastmod>${u.lastmod}</lastmod>` : ""}
     <changefreq>${u.changefreq}</changefreq>
     <priority>${u.priority}</priority>
   </url>`
@@ -944,6 +928,7 @@ ${urls
 
 // ── Admin SEO routes ───────────────────────────────────────────────────────────
 export function registerSEORoutes(app: any, db: Db) {
+  app.use("/api/admin/seo", requireAuth, requireRole("admin", "manager"));
   app.get("/api/admin/seo", async (req: Request, res: Response) => {
     try {
       const overrides = await db.collection("seo_overrides").find({}).toArray();

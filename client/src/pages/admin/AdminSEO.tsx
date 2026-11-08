@@ -23,8 +23,8 @@ const KNOWN_ROUTES = [
   { path: "/services/tajweed", label: "أحكام التجويد", defaultImage: "/images/albayan-learning.svg" },
   { path: "/services/revision", label: "مراجعة القرآن الكريم", defaultImage: "/images/albayan-learning.svg" },
   { path: "/campaigns", label: "البرامج التعليمية", defaultImage: "/images/albayan-official-logo.png" },
-  { path: "/about", label: "من نحن", defaultImage: "/images/og-banner1.png" },
-  { path: "/contact", label: "تواصل معنا", defaultImage: "/images/og-banner1.png" },
+  { path: "/about", label: "من نحن", defaultImage: "/images/albayan-official-logo.png" },
+  { path: "/contact", label: "تواصل معنا", defaultImage: "/images/albayan-official-logo.png" },
   { path: "/leaderboard", label: "أعداد المسجلين", defaultImage: "/images/albayan-official-logo.png" },
   { path: "/volunteer", label: "التطوع", defaultImage: "/images/albayan-official-logo.png" },
   { path: "/jobs", label: "الوظائف", defaultImage: "/images/albayan-official-logo.png" },
@@ -237,7 +237,7 @@ export default function AdminSEO() {
                         <Input
                           value={editing.image}
                           onChange={(e) => setEditing({ ...editing, image: e.target.value })}
-                          placeholder="/images/og-banner1.png"
+                          placeholder="/images/albayan-hero-quran.webp"
                           dir="ltr"
                           className="font-mono flex-1"
                         />
@@ -245,11 +245,10 @@ export default function AdminSEO() {
                       {/* Image presets */}
                       <div className="flex flex-wrap gap-2 mt-1">
                         {[
-                          { label: "بانر 1", value: "/images/og-banner1.png" },
-                          { label: "بانر 2", value: "/images/og-banner2.png" },
-                          { label: "سقيا الماء", value: "/images/og-water.png" },
-                          { label: "رمضانية", value: "/images/og-ramadan.png" },
-                          { label: "إفطار", value: "/images/og-iftar.png" },
+                          { label: "الشعار الرسمي", value: "/images/albayan-official-logo.png" },
+                          { label: "الواجهة الرئيسية", value: "/images/albayan-hero-quran.webp" },
+                          { label: "أثر التعليم", value: "/images/albayan-learning-impact.jpg" },
+                          { label: "حلقات القرآن", value: "/images/albayan-classroom-group.jpg" },
                         ].map((p) => (
                           <button
                             key={p.value}
@@ -397,7 +396,7 @@ export default function AdminSEO() {
         <CardContent className="pt-4 pb-3">
           <div className="text-xs text-muted-foreground space-y-1">
             <p className="font-bold text-foreground">ملاحظات مهمة:</p>
-            <p>• الصور المتاحة في الموقع: <code className="font-mono">/images/og-banner1.png</code>, <code className="font-mono">/images/og-banner2.png</code>, <code className="font-mono">/images/og-water.png</code>, <code className="font-mono">/images/og-ramadan.png</code>, <code className="font-mono">/images/og-iftar.png</code></p>
+            <p>• الصور المتاحة: <code className="font-mono">/images/albayan-official-logo.png</code>, <code className="font-mono">/images/albayan-hero-quran.webp</code>, <code className="font-mono">/images/albayan-learning-impact.jpg</code>, <code className="font-mono">/images/albayan-classroom-group.jpg</code></p>
             <p>• يمكنك أيضاً استخدام روابط صور خارجية كاملة تبدأ بـ <code className="font-mono">https://</code></p>
             <p>• الأبعاد المثالية للصور: <strong>1200 × 630 بكسل</strong></p>
             <p>• تغييرات OG تظهر مباشرة لروبوتات المشاركة، لكن WhatsApp وFacebook يخزنون الروابط مؤقتاً لعدة ساعات</p>

@@ -252,7 +252,16 @@ export function AppSidebar() {
   const { isMobile, setOpenMobile } = useSidebar();
 
   const config = roleConfig[user?.role] || roleConfig["employee"];
-  const groups = config.groups;
+  const groups = config.groups
+    .filter(group => group.label !== "الخدمات الإنسانية")
+    .map(group => ({
+      ...group,
+      items: group.items.map(item => ({
+        ...item,
+        url: !["admin", "manager"].includes(user?.role) && item.url === "/admin/ai"
+          ? "/employee/ai" : item.url,
+      })),
+    }));
 
   // Close sidebar on mobile after navigation
   const navigate = (url: string) => {

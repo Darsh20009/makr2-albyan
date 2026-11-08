@@ -1,3 +1,4 @@
+import React from "react";
 import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -9,81 +10,81 @@ import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import Profile from "@/pages/Profile";
 import Donate from "@/pages/Donate";
-import Admin from "@/pages/Admin";
-import AdminContent from "@/pages/admin/AdminContent";
-import AdminPages from "@/pages/admin/AdminPages";
-import AdminSettings from "@/pages/admin/AdminSettings";
-import AdminUsers from "@/pages/admin/AdminUsers";
-import AdminDonations from "@/pages/admin/AdminDonations";
-import AdminTransfers from "@/pages/admin/AdminTransfers";
-import AdminNews from "@/pages/admin/AdminNews";
-import AdminCampaigns from "@/pages/admin/AdminCampaigns";
-import AdminJobs from "@/pages/admin/AdminJobs";
-import AdminApplications from "@/pages/admin/AdminApplications";
-import PaymentResult from "@/pages/PaymentResult";
-import PaymentGatewayDone from "@/pages/PaymentGatewayDone";
-import SimulationPayment from "@/pages/SimulationPayment";
+const Admin = React.lazy(() => import("@/pages/Admin"));
+const AdminContent = React.lazy(() => import("@/pages/admin/AdminContent"));
+const AdminPages = React.lazy(() => import("@/pages/admin/AdminPages"));
+const AdminSettings = React.lazy(() => import("@/pages/admin/AdminSettings"));
+const AdminUsers = React.lazy(() => import("@/pages/admin/AdminUsers"));
+const AdminDonations = React.lazy(() => import("@/pages/admin/AdminDonations"));
+const AdminTransfers = React.lazy(() => import("@/pages/admin/AdminTransfers"));
+const AdminNews = React.lazy(() => import("@/pages/admin/AdminNews"));
+const AdminCampaigns = React.lazy(() => import("@/pages/admin/AdminCampaigns"));
+const AdminJobs = React.lazy(() => import("@/pages/admin/AdminJobs"));
+const AdminApplications = React.lazy(() => import("@/pages/admin/AdminApplications"));
+const PaymentResult = React.lazy(() => import("@/pages/PaymentResult"));
+const PaymentGatewayDone = React.lazy(() => import("@/pages/PaymentGatewayDone"));
+const SimulationPayment = React.lazy(() => import("@/pages/SimulationPayment"));
 import { PaymentProvider } from "@/contexts/payment-context";
 import { PaymentOverlay } from "@/components/PaymentOverlay";
 import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
-import BankAccounts from "@/pages/BankAccounts";
-import Contact from "@/pages/Contact";
-import Goals from "@/pages/Goals";
-import Vision from "@/pages/Vision";
-import Founders from "@/pages/Founders";
-import GeneralAssembly from "@/pages/GeneralAssembly";
-import Services from "@/pages/Services";
-import ServiceDetail from "@/pages/ServiceDetail";
-import Certificates from "@/pages/Certificates";
-import BankTransfer from "@/pages/BankTransfer";
-import DonationSuccess from "@/pages/DonationSuccess";
-import Impact from "@/pages/Impact";
-import Notifications from "@/pages/Notifications";
+const BankAccounts = React.lazy(() => import("@/pages/BankAccounts"));
+const Contact = React.lazy(() => import("@/pages/Contact"));
+const Goals = React.lazy(() => import("@/pages/Goals"));
+const Vision = React.lazy(() => import("@/pages/Vision"));
+const Founders = React.lazy(() => import("@/pages/Founders"));
+const GeneralAssembly = React.lazy(() => import("@/pages/GeneralAssembly"));
+const Services = React.lazy(() => import("@/pages/Services"));
+const ServiceDetail = React.lazy(() => import("@/pages/ServiceDetail"));
+const Certificates = React.lazy(() => import("@/pages/Certificates"));
+const BankTransfer = React.lazy(() => import("@/pages/BankTransfer"));
+const DonationSuccess = React.lazy(() => import("@/pages/DonationSuccess"));
+const Impact = React.lazy(() => import("@/pages/Impact"));
+const Notifications = React.lazy(() => import("@/pages/Notifications"));
 import {
   AboutPage, BoardPage, AssemblyPage, ProgramsPage, NewslettersPage,
   BeneficiariesPage, JobsPage, ApplyJobPage, VolunteerPage, BylawsPage,
   FinancialsPage, PoliciesPage, CommitteesPage, SatisfactionPage, EthicsPage,
   ExecutivePage, NewsPage, NewsDetailPage, BlogPage,
 } from "@/pages/ContentPage";
-import { PrivacyPolicyPage } from "@/pages/PrivacyPolicy";
-import AdminEmails from "@/pages/admin/AdminEmails";
-import PosterGenerator from "@/pages/admin/PosterGenerator";
-import AdminAnalytics from "@/pages/admin/AdminAnalytics";
-import AdminAttendance from "@/pages/admin/AdminAttendance";
-import AdminLeave from "@/pages/admin/AdminLeave";
-import AdminNotifications from "@/pages/admin/AdminNotifications";
-import AdminStockMovements from "@/pages/admin/AdminStockMovements";
-import AdminProducts from "@/pages/admin/AdminProducts";
-import AdminDeliveries from "@/pages/admin/AdminDeliveries";
-import AdminBeneficiaries from "@/pages/admin/AdminBeneficiaries";
-import AdminSEO from "@/pages/admin/AdminSEO";
-import AdminQirox from "@/pages/admin/AdminQirox";
-import AdminSlider from "@/pages/admin/AdminSlider";
-import AdminAI from "@/pages/admin/AdminAI";
-import AdminCases from "@/pages/admin/AdminCases";
-import AdminAppStore from "@/pages/admin/AdminAppStore";
-import AdminFAQ from "@/pages/admin/AdminFAQ";
-import AdminBanners from "@/pages/admin/AdminBanners";
-import AdminTracking from "@/pages/admin/AdminTracking";
-import FAQPage from "@/pages/FAQ";
-import TrackDonation from "@/pages/TrackDonation";
-import Campaigns from "@/pages/campaigns/Campaigns";
-import CampaignDetail from "@/pages/campaigns/CampaignDetail";
+const PrivacyPolicyPage = React.lazy(() => import("@/pages/PrivacyPolicy").then(m => ({ default: m.PrivacyPolicyPage })));
+const AdminEmails = React.lazy(() => import("@/pages/admin/AdminEmails"));
+const PosterGenerator = React.lazy(() => import("@/pages/admin/PosterGenerator"));
+const AdminAnalytics = React.lazy(() => import("@/pages/admin/AdminAnalytics"));
+const AdminAttendance = React.lazy(() => import("@/pages/admin/AdminAttendance"));
+const AdminLeave = React.lazy(() => import("@/pages/admin/AdminLeave"));
+const AdminNotifications = React.lazy(() => import("@/pages/admin/AdminNotifications"));
+const AdminStockMovements = React.lazy(() => import("@/pages/admin/AdminStockMovements"));
+const AdminProducts = React.lazy(() => import("@/pages/admin/AdminProducts"));
+const AdminDeliveries = React.lazy(() => import("@/pages/admin/AdminDeliveries"));
+const AdminBeneficiaries = React.lazy(() => import("@/pages/admin/AdminBeneficiaries"));
+const AdminSEO = React.lazy(() => import("@/pages/admin/AdminSEO"));
+const AdminQirox = React.lazy(() => import("@/pages/admin/AdminQirox"));
+const AdminSlider = React.lazy(() => import("@/pages/admin/AdminSlider"));
+const AdminAI = React.lazy(() => import("@/pages/admin/AdminAI"));
+const AdminCases = React.lazy(() => import("@/pages/admin/AdminCases"));
+const AdminAppStore = React.lazy(() => import("@/pages/admin/AdminAppStore"));
+const AdminFAQ = React.lazy(() => import("@/pages/admin/AdminFAQ"));
+const AdminBanners = React.lazy(() => import("@/pages/admin/AdminBanners"));
+const AdminTracking = React.lazy(() => import("@/pages/admin/AdminTracking"));
+const FAQPage = React.lazy(() => import("@/pages/FAQ"));
+const TrackDonation = React.lazy(() => import("@/pages/TrackDonation"));
+const Campaigns = React.lazy(() => import("@/pages/campaigns/Campaigns"));
+const CampaignDetail = React.lazy(() => import("@/pages/campaigns/CampaignDetail"));
 
-import EmployeeDashboard from "@/pages/employee/Dashboard";
-import EmployeeTransfers from "@/pages/employee/Transfers";
-import EmployeeApplications from "@/pages/employee/Applications";
-import EmployeeAttendance from "@/pages/employee/Attendance";
-import EmployeeLeaveRequests from "@/pages/employee/LeaveRequests";
-import EmployeeChat from "@/pages/employee/Chat";
-import InternalMail from "@/pages/employee/InternalMail";
-import AccountantDashboard from "@/pages/employee/AccountantDashboard";
-import ProgrammerDashboard from "@/pages/employee/ProgrammerDashboard";
-import SalesDashboard from "@/pages/employee/SalesDashboard";
-import EmployeeCases from "@/pages/employee/Cases";
+const EmployeeDashboard = React.lazy(() => import("@/pages/employee/Dashboard"));
+const EmployeeTransfers = React.lazy(() => import("@/pages/employee/Transfers"));
+const EmployeeApplications = React.lazy(() => import("@/pages/employee/Applications"));
+const EmployeeAttendance = React.lazy(() => import("@/pages/employee/Attendance"));
+const EmployeeLeaveRequests = React.lazy(() => import("@/pages/employee/LeaveRequests"));
+const EmployeeChat = React.lazy(() => import("@/pages/employee/Chat"));
+const InternalMail = React.lazy(() => import("@/pages/employee/InternalMail"));
+const AccountantDashboard = React.lazy(() => import("@/pages/employee/AccountantDashboard"));
+const ProgrammerDashboard = React.lazy(() => import("@/pages/employee/ProgrammerDashboard"));
+const SalesDashboard = React.lazy(() => import("@/pages/employee/SalesDashboard"));
+const EmployeeCases = React.lazy(() => import("@/pages/employee/Cases"));
 
-import DeliveryDashboard from "@/pages/delivery/DeliveryDashboard";
-import DeliveryOrders from "@/pages/delivery/DeliveryOrders";
+const DeliveryDashboard = React.lazy(() => import("@/pages/delivery/DeliveryDashboard"));
+const DeliveryOrders = React.lazy(() => import("@/pages/delivery/DeliveryOrders"));
 
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
@@ -91,7 +92,8 @@ import { DeliverySidebar } from "@/components/DeliverySidebar";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { ChevronRight, AlertTriangle, RefreshCw } from "lucide-react";
-import React from "react";
+import { canOpenWorkspace } from "@shared/access-policy";
+const QuranPrograms = React.lazy(() => import("@/pages/QuranPrograms"));
 
 const DASHBOARD_ROOTS = ["/admin", "/employee", "/delivery"];
 
@@ -188,6 +190,7 @@ function BackBar() {
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const [, setLocation] = useLocation();
+  const [currentPath] = useLocation();
   React.useEffect(() => {
     if (!isLoading && !user) {
       setLocation("/login");
@@ -204,6 +207,13 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
   if (!user) return null;
+  if (!canOpenWorkspace(user.role, currentPath)) return (
+    <main dir="rtl" className="min-h-screen grid place-content-center gap-4 p-8 text-center">
+      <h1 className="text-2xl font-bold">هذه الصفحة غير متاحة لدور حسابك</h1>
+      <p>يمكنك متابعة تبرعاتك وإعداداتك من حسابك.</p>
+      <a href="/profile" className="text-primary underline">العودة إلى حسابي</a>
+    </main>
+  );
   return <>{children}</>;
 }
 
@@ -264,7 +274,7 @@ function RoleBasedEmployeeDashboard() {
   return <EmployeeDashboard />;
 }
 
-import AdminReports from "@/pages/admin/AdminReports";
+const AdminReports = React.lazy(() => import("@/pages/admin/AdminReports"));
 
 function Router() {
   return (
@@ -399,6 +409,9 @@ function Router() {
       </Route>
 
       {/* Employee Routes */}
+      <Route path="/employee/ai">
+        <EmployeeLayout><AdminAI /></EmployeeLayout>
+      </Route>
       <Route path="/employee">
         <EmployeeLayout><RoleBasedEmployeeDashboard /></EmployeeLayout>
       </Route>
@@ -443,8 +456,8 @@ function Router() {
       <Route path="/payment-gateway-done" component={PaymentGatewayDone} />
 
       {/* Services */}
-      <Route path="/services"><Redirect to="/campaigns" /></Route>
-      <Route path="/services/:slug"><Redirect to="/campaigns" /></Route>
+      <Route path="/services"><Redirect to="/programs" /></Route>
+      <Route path="/services/:slug"><Redirect to="/programs" /></Route>
 
       {/* Certificates */}
       <Route path="/certificates" component={Certificates} />
@@ -460,7 +473,8 @@ function Router() {
       <Route path="/general-assembly"><Redirect to="/campaigns" /></Route>
       <Route path="/board"><Redirect to="/governance/disclosure" /></Route>
       <Route path="/assembly"><Redirect to="/governance/disclosure" /></Route>
-      <Route path="/programs"><Redirect to="/campaigns" /></Route>
+      <Route path="/programs" component={QuranPrograms} />
+      <Route path="/programs/:slug" component={QuranPrograms} />
       <Route path="/newsletters"><Redirect to="/impact" /></Route>
 
       {/* Services Section */}
@@ -506,7 +520,9 @@ function AppInner() {
   const isInternalPage = location.startsWith("/admin") || location.startsWith("/employee") || location.startsWith("/delivery");
   return (
     <>
-      <Router />
+      <React.Suspense fallback={<div role="status" dir="rtl" className="p-10 text-center">جاري تحميل الصفحة…</div>}>
+        <Router />
+      </React.Suspense>
       <PaymentOverlay />
       <PushNotificationPrompt />
     </>

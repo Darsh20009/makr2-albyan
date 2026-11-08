@@ -4,55 +4,22 @@ dist
 .DS_Store
 *.log
 
-# Secrets, runtime uploads, and workspace-only files
-.env*
-!.env.example
-attached_assets/
-apple-pay-certs/
-uploads/*
-!uploads/.gitkeep
-client/public/uploads/
-test_reports/
-artifacts/
+# Replit workspace data and user-provided source material
 .agents/
 .local/
-.config/
-.replit
-replit.md
-._*
-**/._*
-*.pem
-*.p12
-*.p8
-*.key
-*.pfx
-*.jks
-*.sqlite
-*.db
-*.dump
-*.bak
+artifacts/
+attached_assets/
+test_reports/
 
-# Keep credentials, private source material, and runtime uploads out of Git
-.env*
-!.env.example
-attached_assets/
+# Private payment credentials and user uploads
 apple-pay-certs/
-test_reports/
-.agents/
-.local/
-artifacts/
-.config/
-memory/
 server/seed-admin.ts
+*.p8
+*.p12
+*.key
+*.pem
 uploads/*
 !uploads/.gitkeep
-._*
-*.pem
-*.key
-*.p12
-*.pfx
-*.crt
-*.cer
 
-# Certificate signing requests
-*.csr
+# macOS resource-fork sidecars
+**/._*
