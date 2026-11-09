@@ -6,10 +6,9 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/DonationHome";
-import Login from "@/pages/Login";
-import Register from "@/pages/Register";
 import Profile from "@/pages/Profile";
 import Donate from "@/pages/Donate";
+import AssociationInfoPage from "@/pages/AssociationInfoPage";
 const Admin = React.lazy(() => import("@/pages/Admin"));
 const AdminContent = React.lazy(() => import("@/pages/admin/AdminContent"));
 const AdminPages = React.lazy(() => import("@/pages/admin/AdminPages"));
@@ -29,10 +28,6 @@ import { PaymentOverlay } from "@/components/PaymentOverlay";
 import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
 const BankAccounts = React.lazy(() => import("@/pages/BankAccounts"));
 const Contact = React.lazy(() => import("@/pages/Contact"));
-const Goals = React.lazy(() => import("@/pages/Goals"));
-const Vision = React.lazy(() => import("@/pages/Vision"));
-const Founders = React.lazy(() => import("@/pages/Founders"));
-const GeneralAssembly = React.lazy(() => import("@/pages/GeneralAssembly"));
 const Services = React.lazy(() => import("@/pages/Services"));
 const ServiceDetail = React.lazy(() => import("@/pages/ServiceDetail"));
 const Certificates = React.lazy(() => import("@/pages/Certificates"));
@@ -40,12 +35,6 @@ const BankTransfer = React.lazy(() => import("@/pages/BankTransfer"));
 const DonationSuccess = React.lazy(() => import("@/pages/DonationSuccess"));
 const Impact = React.lazy(() => import("@/pages/Impact"));
 const Notifications = React.lazy(() => import("@/pages/Notifications"));
-import {
-  AboutPage, BoardPage, AssemblyPage, ProgramsPage, NewslettersPage,
-  BeneficiariesPage, JobsPage, ApplyJobPage, VolunteerPage, BylawsPage,
-  FinancialsPage, PoliciesPage, CommitteesPage, SatisfactionPage, EthicsPage,
-  ExecutivePage, NewsPage, NewsDetailPage, BlogPage,
-} from "@/pages/ContentPage";
 const PrivacyPolicyPage = React.lazy(() => import("@/pages/PrivacyPolicy").then(m => ({ default: m.PrivacyPolicyPage })));
 const AdminEmails = React.lazy(() => import("@/pages/admin/AdminEmails"));
 const PosterGenerator = React.lazy(() => import("@/pages/admin/PosterGenerator"));
@@ -279,9 +268,9 @@ const AdminReports = React.lazy(() => import("@/pages/admin/AdminReports"));
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Home} />
-      <Route path="/login" component={Login} />
-      <Route path="/register" component={Register} />
+      <Route path="/"><Home /></Route>
+      <Route path="/login"><Home initialAuthOpen /></Route>
+      <Route path="/register"><Home initialAuthOpen /></Route>
       <Route path="/setup-password"><Redirect to="/login" /></Route>
       <Route path="/leaderboard" component={Impact} />
       <Route path="/profile" component={Profile} />
@@ -466,13 +455,18 @@ function Router() {
       <Route path="/bank-transfer"><Redirect to="/donate" /></Route>
 
       {/* About Section */}
-      <Route path="/about" component={AboutPage} />
-      <Route path="/goals"><Redirect to="/campaigns" /></Route>
-      <Route path="/vision"><Redirect to="/campaigns" /></Route>
-      <Route path="/founders"><Redirect to="/campaigns" /></Route>
+      <Route path="/about/history"><AssociationInfoPage pageKey="history" /></Route>
+      <Route path="/about/vision"><AssociationInfoPage pageKey="vision" /></Route>
+      <Route path="/about/goals"><AssociationInfoPage pageKey="goals" /></Route>
+      <Route path="/about/founders"><AssociationInfoPage pageKey="founders" /></Route>
+      <Route path="/about/board"><AssociationInfoPage pageKey="board" /></Route>
+      <Route path="/about"><AssociationInfoPage pageKey="overview" /></Route>
+      <Route path="/goals"><Redirect to="/about/goals" /></Route>
+      <Route path="/vision"><Redirect to="/about/vision" /></Route>
+      <Route path="/founders"><Redirect to="/about/founders" /></Route>
       <Route path="/general-assembly"><Redirect to="/campaigns" /></Route>
-      <Route path="/board"><Redirect to="/governance/disclosure" /></Route>
-      <Route path="/assembly"><Redirect to="/governance/disclosure" /></Route>
+      <Route path="/board"><Redirect to="/about/board" /></Route>
+      <Route path="/assembly"><Redirect to="/about/board" /></Route>
       <Route path="/programs" component={QuranPrograms} />
       <Route path="/programs/:slug" component={QuranPrograms} />
       <Route path="/newsletters"><Redirect to="/impact" /></Route>
@@ -484,23 +478,23 @@ function Router() {
       <Route path="/volunteer"><Redirect to="/campaigns" /></Route>
 
       {/* Governance Section — legacy paths */}
-      <Route path="/bylaws" component={BylawsPage} />
-      <Route path="/financials"><Redirect to="/governance/disclosure" /></Route>
-      <Route path="/policies"><Redirect to="/governance/disclosure" /></Route>
-      <Route path="/committees"><Redirect to="/governance/disclosure" /></Route>
-      <Route path="/satisfaction" component={SatisfactionPage} />
-      <Route path="/ethics"><Redirect to="/governance/disclosure" /></Route>
-      <Route path="/executive"><Redirect to="/governance/disclosure" /></Route>
-      <Route path="/disclosure"><Redirect to="/about" /></Route>
+      <Route path="/bylaws"><Redirect to="/governance/policies" /></Route>
+      <Route path="/financials"><Redirect to="/governance/financials" /></Route>
+      <Route path="/policies"><Redirect to="/governance/policies" /></Route>
+      <Route path="/committees"><Redirect to="/governance/committees" /></Route>
+      <Route path="/satisfaction"><Redirect to="/governance/satisfaction" /></Route>
+      <Route path="/ethics"><Redirect to="/governance/ethics" /></Route>
+      <Route path="/executive"><Redirect to="/governance/executive" /></Route>
+      <Route path="/disclosure"><Redirect to="/governance/disclosure" /></Route>
       {/* Governance Section — /governance/* paths used by navbar */}
-      <Route path="/governance/charter"><Redirect to="/governance/disclosure" /></Route>
-      <Route path="/governance/financials"><Redirect to="/governance/disclosure" /></Route>
-      <Route path="/governance/policies"><Redirect to="/governance/disclosure" /></Route>
-      <Route path="/governance/committees"><Redirect to="/governance/disclosure" /></Route>
-      <Route path="/governance/satisfaction"><Redirect to="/governance/disclosure" /></Route>
-      <Route path="/governance/ethics"><Redirect to="/governance/disclosure" /></Route>
-      <Route path="/governance/executive"><Redirect to="/governance/disclosure" /></Route>
-      <Route path="/governance/disclosure"><Redirect to="/about" /></Route>
+      <Route path="/governance/charter"><Redirect to="/governance/policies" /></Route>
+      <Route path="/governance/financials"><AssociationInfoPage pageKey="financials" /></Route>
+      <Route path="/governance/policies"><AssociationInfoPage pageKey="policies" /></Route>
+      <Route path="/governance/committees"><AssociationInfoPage pageKey="committees" /></Route>
+      <Route path="/governance/satisfaction"><AssociationInfoPage pageKey="satisfaction" /></Route>
+      <Route path="/governance/ethics"><AssociationInfoPage pageKey="ethics" /></Route>
+      <Route path="/governance/executive"><AssociationInfoPage pageKey="executive" /></Route>
+      <Route path="/governance/disclosure"><AssociationInfoPage pageKey="disclosure" /></Route>
 
       {/* Other Pages */}
       <Route path="/news"><Redirect to="/impact" /></Route>

@@ -86,6 +86,19 @@ export function Footer() {
           <span>© {new Date().getFullYear()} {albayanAssociation.brandName} · جميع الحقوق محفوظة</span>
           <Link href="/donate">حالة قنوات التبرع</Link>
         </div>
+        <div className="ab-footer-attribution" dir="rtl">
+          <span>صنع عبر</span>
+          <a
+            className="ab-footer-attribution-link"
+            href="https://qiroxstudio.online"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Qirox Studio Group — يفتح موقع Qirox Studio"
+          >
+            <img src="/images/qirox-studio-logo.png" alt="" />
+            <span>Qirox Studio Group</span>
+          </a>
+        </div>
       </div>
     </footer>
   );

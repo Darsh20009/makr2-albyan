@@ -10,7 +10,9 @@ import {
   Globe2,
   GraduationCap,
   Heart,
+  MessageCircle,
   Play,
+  Phone,
   ShieldCheck,
   Users,
   X,
@@ -39,6 +41,7 @@ type PublicDonationSettings = {
   donationChannelsApproved: boolean;
   enableRajhiPayment: boolean;
   enableBankTransfer: boolean;
+  whatsappReceiptsEnabled: boolean;
 };
 
 import { albayanFaq as faqItems } from "@shared/albayan-faq";
@@ -68,7 +71,25 @@ function formatSar(value: number) {
   return `${value.toLocaleString("en-US")} ريال`;
 }
 
-export default function DonationHome() {
+function normalizeDonationPhone(value: string): string | null {
+  const trimmed = value.trim();
+  const asciiDigits = value
+    .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 0x06f0));
+  let digits = asciiDigits.replace(/\D/g, "");
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (digits.startsWith("966") && digits.length === 12) return `+${digits}`;
+  if (digits.length === 10 && digits.startsWith("05")) return `+966${digits.slice(1)}`;
+  if (digits.length === 9 && digits.startsWith("5")) return `+966${digits}`;
+  if (trimmed.startsWith("+") && digits.length >= 8 && digits.length <= 15) return `+${digits}`;
+  return null;
+}
+
+export default function DonationHome({
+  initialAuthOpen = false,
+}: {
+  initialAuthOpen?: boolean;
+}) {
   const [openQuestion, setOpenQuestion] = useState<number | null>(0);
   const [quickDonateOpen, setQuickDonateOpen] = useState(false);
   const [amount, setAmount] = useState("100");
@@ -76,6 +97,7 @@ export default function DonationHome() {
   const [anonymous, setAnonymous] = useState(false);
   const [ongoingSadaqa, setOngoingSadaqa] = useState(false);
   const [donorName, setDonorName] = useState("");
+  const [donorPhone, setDonorPhone] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | "">("");
   const [donationDetailsOpen, setDonationDetailsOpen] = useState(false);
   const [heroVisible, setHeroVisible] = useState(true);
@@ -144,6 +166,7 @@ export default function DonationHome() {
           donationChannelsApproved: false,
           enableRajhiPayment: false,
           enableBankTransfer: false,
+          whatsappReceiptsEnabled: false,
         };
       }
       const payload = await response.json();
@@ -152,6 +175,7 @@ export default function DonationHome() {
         donationChannelsApproved: settings?.donationChannelsApproved === true,
         enableRajhiPayment: settings?.enableRajhiPayment === true,
         enableBankTransfer: settings?.enableBankTransfer === true,
+        whatsappReceiptsEnabled: settings?.whatsappReceiptsEnabled === true,
       };
     },
     staleTime: 60_000,
@@ -167,18 +191,34 @@ export default function DonationHome() {
   const activeCampaigns = campaignsQuery.data || [];
   const amountValue = Number(amount);
   const validAmount = Number.isFinite(amountValue) && Number.isInteger(amountValue) && amountValue > 0;
+  const normalizedDonorPhone = normalizeDonationPhone(donorPhone);
+  const validDonorPhone = Boolean(normalizedDonorPhone);
   const validSelection = campaignId === "general" || activeCampaigns.some((campaign) => campaign.id === campaignId);
   const donationApproved = settingsQuery.data?.donationChannelsApproved === true;
   const availablePaymentMethods: PaymentMethod[] = [
     ...(settingsQuery.data?.enableRajhiPayment ? ["rajhi" as const] : []),
     ...(settingsQuery.data?.enableBankTransfer ? ["bank_transfer" as const] : []),
   ];
+  const quickDonationActionLabel = isDonating
+    ? "جارٍ تجهيز المساهمة"
+    : settingsQuery.isLoading
+      ? "جارٍ التحقق من الحالة"
+      : !donationApproved || availablePaymentMethods.length === 0
+        ? "التبرع غير متاح مؤقتاً"
+        : !validAmount || !validSelection
+          ? "أكمل بيانات التبرع"
+          : !validDonorPhone
+            ? "أدخل رقم جوال صحيحاً"
+            : !paymentMethod
+              ? "اختر وسيلة الدفع"
+              : "المتابعة إلى الدفع";
   useEffect(() => {
     if (donationApproved) setDonationDetailsOpen(true);
   }, [donationApproved]);
   const canContinue =
     donationApproved &&
     validAmount &&
+    validDonorPhone &&
     validSelection &&
     availablePaymentMethods.includes(paymentMethod as PaymentMethod);
   const stats = [
@@ -232,7 +272,7 @@ export default function DonationHome() {
 
   return (
     <div className="ab-home" dir="rtl">
-      <Navbar />
+      <Navbar initialAuthOpen={initialAuthOpen} />
       <main>
         <section ref={heroRef} className="ab-home-hero" id="home" aria-labelledby="home-title">
           <img
@@ -622,7 +662,7 @@ export default function DonationHome() {
               <div className="ab-donation-heading">
                 <span className="ab-donation-zap"><Zap aria-hidden="true" /></span>
                 <div>
-                  <p className="ab-section-index">مساهمة آمنة وواضحة</p>
+                  <p className="ab-section-index">جمعية مقارئ البيان · تبرع آمن</p>
                   <h2 id="ab-donation-title">التبرع السريع</h2>
                 </div>
               </div>
@@ -631,9 +671,13 @@ export default function DonationHome() {
               </button>
             </header>
             <p className="ab-donation-intro" id="ab-donation-description">
-              اختر مبلغ التبرع الآن، وحدّد وجهته عند تفعيل القنوات الرسمية.
+              {settingsQuery.isLoading
+                ? "أدخل رقم جوالك واختر المبلغ؛ نتحقق من جاهزية قنوات الدفع وإشعارات واتساب."
+                : settingsQuery.data?.whatsappReceiptsEnabled
+                  ? "أدخل رقم جوالك. يصلك ملخص العملية عبر واتساب بعد تأكيد الدفع."
+                  : "أدخل رقم جوالك، وسنعرض لك حالة قنوات التبرع قبل المتابعة."}
             </p>
-            <p className="ab-donation-label">اختر مبلغ التبرع الآن</p>
+            <p className="ab-donation-label">مبلغ المساهمة</p>
             <div className="ab-amount-options" role="group" aria-label="مبالغ مقترحة بالريال السعودي">
               {[500, 300, 200, 100, 50].map((preset) => (
                 <button key={preset} type="button" aria-pressed={amount === String(preset)} onClick={() => setAmount(String(preset))}>
@@ -655,6 +699,37 @@ export default function DonationHome() {
                 aria-invalid={amount.length > 0 && !validAmount}
               />
               <span>ر.س</span>
+            </div>
+            <div className="ab-donor-phone-field">
+              <label htmlFor="ab-donor-phone">
+                <Phone aria-hidden="true" />
+                رقم الجوال
+                <span className="ab-phone-required">مطلوب</span>
+              </label>
+              <div className="ab-donor-phone-input-wrap">
+                <input
+                  id="ab-donor-phone"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  dir="ltr"
+                  value={donorPhone}
+                  onChange={(event) => setDonorPhone(event.target.value)}
+                  placeholder="05X XXX XXXX"
+                  aria-invalid={donorPhone.length > 0 && !validDonorPhone}
+                  aria-describedby="ab-donor-phone-note"
+                  maxLength={20}
+                />
+                <MessageCircle aria-hidden="true" />
+              </div>
+              <p id="ab-donor-phone-note">
+                {settingsQuery.data?.whatsappReceiptsEnabled
+                  ? "يُرسل ملخص الإيصال إلى هذا الرقم عبر واتساب بعد تأكيد الدفع."
+                  : "رقمك مطلوب لإتمام المساهمة. إشعار واتساب غير متاح حالياً."}
+              </p>
+              {donorPhone.length > 0 && !validDonorPhone && (
+                <span className="ab-donor-phone-error" role="alert">أدخل رقماً صحيحاً مثل 05XXXXXXXX أو +9665XXXXXXXX.</span>
+              )}
             </div>
             <label className="ab-sadaqa-option">
               <input type="checkbox" checked={ongoingSadaqa} onChange={(event) => setOngoingSadaqa(event.target.checked)} />
@@ -718,18 +793,27 @@ export default function DonationHome() {
                 )}
               </div>
             </details>
-            <div className="ab-donation-status" role="status">
-              <CircleAlert aria-hidden="true" />
+            <div
+              className={`ab-donation-status ${donationApproved && availablePaymentMethods.length > 0 ? "is-ready" : "is-unavailable"}`}
+              role="status"
+            >
+              {donationApproved && availablePaymentMethods.length > 0
+                ? <ShieldCheck aria-hidden="true" />
+                : <CircleAlert aria-hidden="true" />}
               <span>
                 {settingsQuery.isLoading
                   ? "جارٍ التحقق من حالة قنوات التبرع…"
                   : !donationApproved
-                    ? "قنوات التبرع غير معتمدة حالياً؛ لا يمكن بدء الدفع."
+                    ? "التبرع الإلكتروني غير متاح الآن. لن يُخصم أي مبلغ قبل اعتماد وسائل الدفع الرسمية باسم الجمعية."
                     : availablePaymentMethods.length === 0
-                      ? "القنوات معتمدة، لكن لا توجد وسيلة دفع مفعّلة حالياً."
-                      : "قنوات التبرع معتمدة. اختر وسيلة الدفع للمتابعة."}
+                      ? "لا توجد وسيلة دفع مفعّلة حالياً. يمكنك حفظ بياناتك والعودة عند توفرها."
+                      : "القنوات الرسمية متاحة. اختر وسيلة الدفع للمتابعة بأمان."}
               </span>
             </div>
+            <p className="ab-donation-legal">
+              <ShieldCheck aria-hidden="true" />
+              جمعية مقارئ البيان · ترخيص {albayanAssociation.licenseNumber}
+            </p>
             <button
               className="ab-home-button ab-home-button-gold"
               type="button"
@@ -746,6 +830,7 @@ export default function DonationHome() {
                   paymentStatus: "pending",
                   isDeleted: false,
                   pointsEarned: 0,
+                  donorPhone: normalizedDonorPhone!,
                   ...(campaignId !== "general" ? { campaignId } : {}),
                   ...(anonymous
                     ? { donorName: "فاعل خير" }
@@ -755,7 +840,7 @@ export default function DonationHome() {
                 });
               }}
             >
-              {settingsQuery.isLoading ? "جارٍ التحقق من الحالة" : isDonating ? "جارٍ تجهيز المساهمة" : "تبرع الآن"}
+              {quickDonationActionLabel}
               <ArrowLeft aria-hidden="true" />
             </button>
             <p className="ab-donation-foot">

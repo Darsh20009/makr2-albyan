@@ -4,25 +4,62 @@ import { useAuth } from "@/hooks/use-auth";
 import { useNotifications } from "@/hooks/use-notifications";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Bell, Heart, LogOut, Menu, Search, Shield, User, UserCircle2, X } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import PhoneAuth from "@/pages/PhoneAuth";
+import { Bell, ChevronDown, Heart, LogOut, Menu, Search, Shield, User, UserCircle2, X } from "lucide-react";
 import "./Navbar.css";
 
-const publicLinks = [
-  { href: "/", label: "الرئيسية" },
-  { href: "/campaigns", label: "المشاريع" },
-  { href: "/programs", label: "البرامج التعليمية" },
-  { href: "/about", label: "عن الجمعية" },
-  { href: "/impact", label: "التقارير" },
-  { href: "/faq", label: "الأسئلة الشائعة" },
-  { href: "/bylaws", label: "الأهداف النظامية", mobileOnly: true },
+const navigationGroups = [
+  {
+    label: "الخدمات الإنسانية",
+    links: [
+      { href: "/campaigns", label: "المشاريع الحالية" },
+      { href: "/donate", label: "التبرع" },
+      { href: "/programs", label: "البرامج التعليمية" },
+    ],
+  },
+  {
+    label: "عن الجمعية",
+    links: [
+      { href: "/about", label: "نبذة عن الجمعية" },
+      { href: "/about/history", label: "نشأة الجمعية" },
+      { href: "/about/vision", label: "الرؤية والرسالة" },
+      { href: "/about/goals", label: "الأهداف" },
+      { href: "/about/founders", label: "المؤسسون" },
+      { href: "/about/board", label: "مجلس الإدارة" },
+      { href: "/programs", label: "البرامج" },
+    ],
+  },
+  {
+    label: "الحوكمة والشفافية",
+    links: [
+      { href: "/governance/financials", label: "القوائم المالية" },
+      { href: "/governance/policies", label: "السياسات واللوائح" },
+      { href: "/governance/committees", label: "اللجان" },
+      { href: "/governance/ethics", label: "الميثاق الأخلاقي" },
+      { href: "/governance/disclosure", label: "الإفصاح" },
+      { href: "/governance/satisfaction", label: "قياس الرضا" },
+      { href: "/governance/executive", label: "المسؤول التنفيذي" },
+    ],
+  },
 ];
-const desktopLinks = publicLinks.filter((item) => !item.mobileOnly);
+const commonLinks = [
+  { href: "/impact", label: "أثر التعليم" },
+  { href: "/faq", label: "الأسئلة الشائعة" },
+  { href: "/track-donation", label: "تتبع التبرع" },
+];
 
-export function Navbar() {
+export function Navbar({
+  initialAuthOpen = false,
+}: {
+  initialAuthOpen?: boolean;
+}) {
   const { user, logout } = useAuth();
   const { unread } = useNotifications();
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const [isOpen, setIsOpen] = useState(false);
+  const [authOpen, setAuthOpen] = useState(initialAuthOpen);
+  const [authReturnTo, setAuthReturnTo] = useState<string | null>(null);
 
   const roleLinks = user ? [
     ...(["admin", "accountant", "editor", "manager"].includes(user.role || "") ? [{ href: "/admin", label: "لوحة التحكم" }] : []),
@@ -31,6 +68,28 @@ export function Navbar() {
   ] : [];
   const isPublicLinkActive = (href: string) =>
     location === href || (["/campaigns", "/programs"].includes(href) && location.startsWith(`${href}/`));
+  const isAuthRoute = location.startsWith("/login") || location.startsWith("/register");
+  const openAuth = (returnTo?: string) => {
+    setIsOpen(false);
+    setAuthReturnTo(returnTo || null);
+    setAuthOpen(true);
+  };
+  const closeAuth = () => {
+    setAuthOpen(false);
+    setAuthReturnTo(null);
+    if (isAuthRoute) setLocation("/");
+  };
+  const completeAuth = (role?: string) => {
+    setAuthOpen(false);
+    const requestedNext = isAuthRoute ? new URLSearchParams(window.location.search).get("next") : null;
+    const safeNext = requestedNext?.startsWith("/") && !requestedNext.startsWith("//") ? requestedNext : null;
+    const staffHome = ["admin", "manager"].includes(role || "") ? "/admin"
+      : role === "delivery" ? "/delivery"
+        : ["employee", "accountant", "programmer", "sales"].includes(role || "") ? "/employee" : null;
+    const destination = authReturnTo || safeNext || staffHome || (isAuthRoute ? "/" : null);
+    setAuthReturnTo(null);
+    if (destination) setLocation(destination);
+  };
 
   return (
     <>
@@ -47,7 +106,26 @@ export function Navbar() {
           </Link>
 
           <nav className="ab-nav-links" aria-label="التنقل العام">
-            {desktopLinks.map((item) => (
+            <Link href="/" aria-current={location === "/" ? "page" : undefined} className="ab-nav-link">الرئيسية</Link>
+            {navigationGroups.map((group) => (
+              <DropdownMenu key={group.label}>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" className={`ab-nav-link ab-nav-group-trigger ${group.links.some(item => isPublicLinkActive(item.href)) ? "is-active" : ""}`}>
+                    {group.label}<ChevronDown aria-hidden="true" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56 border-slate-200 bg-white p-1">
+                  {group.links.map((item) => (
+                    <DropdownMenuItem key={item.href + item.label} asChild>
+                      <Link href={item.href} aria-current={isPublicLinkActive(item.href) ? "page" : undefined} className="flex w-full items-center rounded-md px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-[#f3f6f1] hover:text-[#0d503e]">
+                        {item.label}
+                      </Link>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ))}
+            {commonLinks.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
@@ -84,10 +162,10 @@ export function Navbar() {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <Link href="/login" className="ab-nav-account">
+              <button type="button" className="ab-nav-account" aria-haspopup="dialog" onClick={() => openAuth("/profile")}>
                 <User aria-hidden="true" />
                 <span>حسابي</span>
-              </Link>
+              </button>
             )}
 
             <Link href="/notifications" className="ab-nav-icon-link ab-nav-notifications" aria-label={`الإشعارات${unread ? `، ${unread} غير مقروءة` : ""}`}>
@@ -111,7 +189,20 @@ export function Navbar() {
                   <p className="mt-3 text-xs leading-6 text-slate-600">تعليم القرآن الكريم للناطقين بغير العربية</p>
                 </div>
                 <nav className="space-y-1 border-b border-slate-200 p-3" aria-label="التنقل العام">
-                  {publicLinks.map((item) => (
+                  <Link href="/" onClick={() => setIsOpen(false)} aria-current={location === "/" ? "page" : undefined} className="ab-nav-mobile-link">الرئيسية</Link>
+                  {navigationGroups.map((group) => (
+                    <details key={group.label} className="ab-nav-mobile-group">
+                      <summary>{group.label}<ChevronDown aria-hidden="true" /></summary>
+                      <div className="ab-nav-mobile-submenu">
+                        {group.links.map((item) => (
+                          <Link key={item.href + item.label} href={item.href} onClick={() => setIsOpen(false)} aria-current={isPublicLinkActive(item.href) ? "page" : undefined} className="ab-nav-mobile-link">
+                            {item.label}
+                          </Link>
+                        ))}
+                      </div>
+                    </details>
+                  ))}
+                  {commonLinks.map((item) => (
                     <Link key={item.href} href={item.href} onClick={() => setIsOpen(false)} aria-current={isPublicLinkActive(item.href) ? "page" : undefined} className="ab-nav-mobile-link">
                       {item.label}
                     </Link>
@@ -124,7 +215,7 @@ export function Navbar() {
                       <button onClick={() => { logout(); setIsOpen(false); }} className="flex w-full items-center gap-2 rounded-sm px-4 py-3 text-sm font-bold text-rose-700 hover:bg-rose-50"><LogOut className="h-4 w-4" /> تسجيل الخروج</button>
                     </>
                   ) : (
-                    <Link href="/login" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-sm px-4 py-3 text-sm font-bold text-slate-700 hover:bg-[#f3fcf6]"><User className="h-4 w-4" /> تسجيل الدخول</Link>
+                    <button type="button" onClick={() => openAuth("/profile")} className="flex w-full items-center gap-2 rounded-sm px-4 py-3 text-right text-sm font-bold text-slate-700 hover:bg-[#f3fcf6]"><User className="h-4 w-4" /> تسجيل الدخول</button>
                   )}
                 </nav>
                 <div className="p-4">
@@ -137,6 +228,15 @@ export function Navbar() {
           </div>
         </div>
       </header>
+      <Dialog open={authOpen} onOpenChange={(open) => open ? setAuthOpen(true) : closeAuth()}>
+        <DialogContent dir="rtl" className="max-h-[88vh] w-[calc(100%-24px)] max-w-[400px] overflow-y-auto rounded-2xl border-[#e3e7df] bg-white p-0 shadow-2xl">
+          <DialogHeader className="sr-only">
+            <DialogTitle>الدخول أو إنشاء حساب في مقارئ البيان</DialogTitle>
+            <DialogDescription>أدخل رقم الجوال لتسجيل الدخول أو إنشاء حساب برمز تحقق.</DialogDescription>
+          </DialogHeader>
+          <PhoneAuth embedded onComplete={completeAuth} />
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

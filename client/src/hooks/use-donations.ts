@@ -19,7 +19,7 @@ export function useDonations() {
   });
 
   const createDonationMutation = useMutation({
-    mutationFn: async (data: InsertDonation & { gateway?: string; donorName?: string }) => {
+    mutationFn: async (data: InsertDonation & { gateway?: string; donorName?: string; donorPhone?: string }) => {
       const res = await fetch(api.donations.create.path, {
         method: api.donations.create.method,
         headers: { "Content-Type": "application/json" },

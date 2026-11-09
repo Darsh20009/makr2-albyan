@@ -4,6 +4,9 @@ import { type User as SchemaUser } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 
 export type User = SchemaUser & { role: string };
+export type PhoneOtpVerification =
+  | { kind: "login"; user: User }
+  | { kind: "registration"; registrationToken: string };
 
 export function useAuth() {
   const queryClient = useQueryClient();
@@ -48,18 +51,46 @@ export function useAuth() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || "الرمز غير صالح");
-      return api.auth.me.responses[200].parse(data);
+      if (data?.registrationRequired === true && typeof data.registrationToken === "string") {
+        return { kind: "registration" as const, registrationToken: data.registrationToken };
+      }
+      return { kind: "login" as const, user: api.auth.me.responses[200].parse(data) };
     },
-    onSuccess: (data) => {
-      queryClient.setQueryData([api.auth.me.path], data);
+    onSuccess: (result) => {
+      if (result.kind === "registration") return;
+      queryClient.setQueryData([api.auth.me.path], result.user);
       toast({
         title: "تم تسجيل الدخول بنجاح",
-        description: `مرحباً بك، ${data.name}`,
+        description: `مرحباً بك، ${result.user.name}`,
         variant: "default",
       });
     },
     onError: (error: Error) => {
       toast({ title: "تعذر تسجيل الدخول", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const completePhoneRegistrationMutation = useMutation({
+    mutationFn: async (input: { registrationToken: string; name: string }) => {
+      const res = await fetch("/api/auth/phone-otp/complete-registration", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "تعذر إنشاء الحساب");
+      return api.auth.me.responses[200].parse(data);
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData([api.auth.me.path], data);
+      toast({
+        title: "تم إنشاء الحساب بنجاح",
+        description: `مرحباً بك، ${data.name}`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "تعذر إنشاء الحساب", description: error.message, variant: "destructive" });
     },
   });
 
@@ -134,8 +165,10 @@ export function useAuth() {
     togglePrivacy: togglePrivacyMutation.mutateAsync,
     requestPhoneLoginCode: requestPhoneCodeMutation.mutateAsync,
     loginWithPhoneCode: verifyPhoneCodeMutation.mutateAsync,
+    completePhoneRegistration: completePhoneRegistrationMutation.mutateAsync,
     loginAdminWithPassword: adminPasswordLoginMutation.mutateAsync,
     isPhoneOtpPending: requestPhoneCodeMutation.isPending || verifyPhoneCodeMutation.isPending,
+    isPhoneRegistrationPending: completePhoneRegistrationMutation.isPending,
     isAdminLoginPending: adminPasswordLoginMutation.isPending,
   };
 }

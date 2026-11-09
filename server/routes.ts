@@ -39,7 +39,7 @@ import { generateCertificatePDF, generateInvoicePDF } from "./pdf";
 import { initiateRajhiPayment } from "./rajhi";
 import { updateDonationStatus as confirmDonationStatus } from "./modules/donations/donations.service";
 import { fireNotifyAdmins } from "./core/notifications";
-import { PhoneOtpError, requestPhoneLoginCode, verifyPhoneLoginCode } from "./modules/auth/phone-otp.service";
+import { PhoneOtpError, completePhoneRegistration, requestPhoneLoginCode, verifyPhoneLoginCode } from "./modules/auth/phone-otp.service";
 import {
   isQiroxProjectApiConfigured,
   normalizeSaudiMobile,
@@ -414,7 +414,7 @@ export async function registerRoutes(
       res.json({
         success: true,
         challengeId,
-        message: "إذا كان الرقم مرتبطاً بحساب أو يجري تسجيله، سيصلك رمز التحقق عبر واتساب.",
+        message: "إذا كان الرقم صحيحاً، أرسلنا رمز التحقق عبر واتساب.",
       });
     } catch (error) {
       if (error instanceof PhoneOtpError) {
@@ -427,12 +427,15 @@ export async function registerRoutes(
 
   app.post("/api/auth/phone-otp/verify", async (req: Request, res: Response) => {
     try {
-      const user = await verifyPhoneLoginCode(req.body?.challengeId, req.body?.code);
-      if (!user) return res.status(401).json({ message: "الرمز غير صالح أو انتهت صلاحيته." });
+      const result = await verifyPhoneLoginCode(req.body?.challengeId, req.body?.code);
+      if (!result) return res.status(401).json({ message: "الرمز غير صالح أو انتهت صلاحيته." });
+      if (result.registrationRequired) {
+        return res.json({ success: true, registrationRequired: true, registrationToken: result.registrationToken });
+      }
 
-      req.login(user, (error) => {
+      req.login(result, (error) => {
         if (error) return res.status(500).json({ message: "تعذر تسجيل الدخول." });
-        res.json(safeAuthUser(user));
+        res.json(safeAuthUser(result));
       });
     } catch (error) {
       if (error instanceof PhoneOtpError) {
@@ -440,6 +443,22 @@ export async function registerRoutes(
       }
       console.error("[Auth] Phone OTP verification failed.");
       res.status(500).json({ message: "تعذر التحقق من الرمز حالياً." });
+    }
+  });
+
+  app.post("/api/auth/phone-otp/complete-registration", async (req: Request, res: Response) => {
+    try {
+      const user = await completePhoneRegistration(req.body?.registrationToken, req.body?.name);
+      req.login(user, (error) => {
+        if (error) return res.status(500).json({ message: "تعذر إنشاء الحساب وتسجيل الدخول." });
+        res.status(201).json(safeAuthUser(user));
+      });
+    } catch (error) {
+      if (error instanceof PhoneOtpError) {
+        return res.status(error.statusCode).json({ message: error.message });
+      }
+      console.error("[Auth] Phone registration completion failed.");
+      res.status(500).json({ message: "تعذر إنشاء الحساب حالياً." });
     }
   });
 
@@ -2612,6 +2631,7 @@ export async function registerRoutes(
         donationChannelsApproved: channelsApproved,
         enableRajhiPayment: channelsApproved && settings?.enableRajhiPayment === true,
         enableBankTransfer: channelsApproved && settings?.enableBankTransfer === true,
+        whatsappReceiptsEnabled: isQiroxProjectApiConfigured(),
       });
     } catch (err) {
       res.status(500).json({ message: "خطأ في جلب الإعدادات" });

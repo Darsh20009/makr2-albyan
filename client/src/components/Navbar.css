@@ -214,6 +214,29 @@
   transition: color 160ms ease;
 }
 
+.ab-nav-group-trigger {
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.ab-nav-group-trigger > svg {
+  width: 12px;
+  height: 12px;
+  margin-right: 4px;
+  color: #8b947f;
+  transition: transform 160ms ease;
+}
+
+.ab-nav-group-trigger[data-state="open"] > svg {
+  transform: rotate(180deg);
+}
+
+.ab-nav-group-trigger.is-active {
+  color: #0d503e;
+}
+
 .ab-site-header .ab-nav-link::after {
   position: absolute;
   right: 9px;
@@ -252,6 +275,54 @@
   border-right: 2px solid #c7a65c;
   background: #f4f5ef;
   color: #0d503e;
+}
+
+.ab-nav-mobile-group {
+  border-bottom: 1px solid #f0f0eb;
+}
+
+.ab-nav-mobile-group > summary {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 7px;
+  padding: 10px 14px;
+  color: #273a32;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+
+.ab-nav-mobile-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.ab-nav-mobile-group > summary svg {
+  width: 15px;
+  height: 15px;
+  color: #8b947f;
+  transition: transform 160ms ease;
+}
+
+.ab-nav-mobile-group[open] > summary {
+  color: #0d503e;
+}
+
+.ab-nav-mobile-group[open] > summary svg {
+  transform: rotate(180deg);
+}
+
+.ab-nav-mobile-submenu {
+  border-right: 1px solid #dbe5db;
+  margin-right: 14px;
+  padding: 3px 7px 7px 0;
+}
+
+.ab-nav-mobile-submenu .ab-nav-mobile-link {
+  padding-block: 10px;
+  font-size: 13px;
 }
 
 .ab-nav-mobile-donate {

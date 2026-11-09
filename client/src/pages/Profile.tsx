@@ -4,7 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import {
   ArrowLeft, ChevronLeft, CheckCircle2, Clock, XCircle, FileText,
-  Heart, History, ShieldCheck, LockKeyhole, Mail, Phone, Edit2,
+  Heart, History, ShieldCheck, LockKeyhole, Mail, MessageCircle, Phone, Edit2,
   RefreshCw, Pause, Play, Ban, AlertCircle, LayoutDashboard, Save, Printer,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
@@ -49,6 +49,7 @@ type IssuedInvoice = {
   type?: string;
   createdAt?: string;
   status?: string;
+  whatsappStatus?: string;
 };
 
 const amount = (value: number) => Number(value || 0).toLocaleString("ar-SA", { maximumFractionDigits: 2 });
@@ -135,6 +136,7 @@ function InvoiceDocument({ invoice }: { invoice: IssuedInvoice }) {
 
 function InvoicePanel({ accountId }: { accountId: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { toast } = useToast();
   const invoicesQuery = useQuery<IssuedInvoice[]>({
     queryKey: ["/api/invoices", "profile", accountId],
     queryFn: async () => {
@@ -157,14 +159,44 @@ function InvoicePanel({ accountId }: { accountId: string }) {
     staleTime: 0,
   });
   const invoice = !invoiceQuery.isError ? invoiceQuery.data : undefined;
+  const sendWhatsAppMutation = useMutation({
+    mutationFn: async (invoiceId: string) => {
+      const response = await apiRequest("POST", `/api/invoices/${encodeURIComponent(invoiceId)}/send-whatsapp`);
+      const result = await response.json();
+      if (result?.success !== true) throw new Error(result?.message || "تعذر إرسال ملخص الإيصال عبر واتساب.");
+      return invoiceId;
+    },
+    onSuccess: () => {
+      void invoicesQuery.refetch();
+      toast({ title: "تم إرسال ملخص الإيصال عبر واتساب" });
+    },
+    onError: (error: Error) => toast({
+      title: "تعذر الإرسال عبر واتساب",
+      description: error.message || "تحقق من رقم الجوال وحاول مرة أخرى.",
+      variant: "destructive",
+    }),
+  });
   return <>
     <section id="profile-receipts" className="ap-panel ap-invoices" aria-labelledby="profile-receipts-title">
       <div className="ap-panel-heading"><div><h2 id="profile-receipts-title">الإيصالات الصادرة</h2><p>اعرض إيصالك واطبعه أو احفظه بصيغة PDF من نافذة طباعة المتصفح، دون الحاجة إلى البريد.</p></div><FileText aria-hidden="true" /></div>
       {invoicesQuery.isPending ? <LoadingRows /> : invoicesQuery.isError ? <QueryError retry={() => { void invoicesQuery.refetch(); }} pending={invoicesQuery.isFetching} />
-        : !invoicesQuery.data.length ? <div className="ap-empty"><FileText /><h3>لا توجد إيصالات صادرة بعد</h3><p>ستظهر هنا الإيصالات التي تصدرها الجمعية لحسابك. تأكيد التبرع وحده لا يعني صدور إيصال.</p></div>
-          : invoicesQuery.data.map((item, index) => <article className="ap-invoice-row" key={item.id || index} data-testid={`invoice-row-${index}`}>
-            <div><h3>{item.invoiceNumber ? <>إيصال رقم <bdi>{item.invoiceNumber}</bdi></> : "إيصال صادر دون رقم ظاهر"}</h3><p>{amount(item.amount)} ر.س · {dateLabel(item.createdAt)}</p><p>الحالة: {invoiceStatus(item.status)}</p></div>
-            <button className="ap-button" disabled={!item.id} onClick={() => setSelectedId(item.id)} data-testid={`button-view-invoice-${index}`}><FileText />عرض الإيصال</button>
+          : !invoicesQuery.data.length ? <div className="ap-empty"><FileText /><h3>لا توجد إيصالات صادرة بعد</h3><p>ستظهر هنا الإيصالات التي تصدرها الجمعية لحسابك. تأكيد التبرع وحده لا يعني صدور إيصال.</p></div>
+            : invoicesQuery.data.map((item, index) => <article className="ap-invoice-row" key={item.id || index} data-testid={`invoice-row-${index}`}>
+            <div><h3>{item.invoiceNumber ? <>إيصال رقم <bdi>{item.invoiceNumber}</bdi></> : "إيصال صادر دون رقم ظاهر"}</h3><p>{amount(item.amount)} ر.س · {dateLabel(item.createdAt)}</p><p>الحالة: {invoiceStatus(item.status)}{item.whatsappStatus === "sent" ? " · أُرسل ملخصه عبر واتساب" : ""}</p></div>
+            <div className="ap-invoice-actions">
+              <button className="ap-button" disabled={!item.id} onClick={() => setSelectedId(item.id)} data-testid={`button-view-invoice-${index}`}><FileText />عرض الإيصال</button>
+              <button
+                className="ap-button ap-button-whatsapp"
+                disabled={!item.id || (sendWhatsAppMutation.isPending && sendWhatsAppMutation.variables === item.id)}
+                onClick={() => item.id && sendWhatsAppMutation.mutate(item.id)}
+                data-testid={`button-send-invoice-whatsapp-${index}`}
+              >
+                <MessageCircle />
+                {sendWhatsAppMutation.isPending && sendWhatsAppMutation.variables === item.id
+                  ? "جارٍ الإرسال…"
+                  : item.whatsappStatus === "sent" ? "إعادة الإرسال عبر واتساب" : "إرسال عبر واتساب"}
+              </button>
+            </div>
           </article>)}
     </section>
     <Dialog open={!!selectedId} onOpenChange={open => { if (!open) setSelectedId(null); }}>
@@ -281,7 +313,7 @@ export default function Profile() {
   });
 
   useEffect(() => {
-    if (!isLoading && !user && !authState.isError) setLocation("/login");
+    if (!isLoading && !user && !authState.isError) setLocation("/login?next=%2Fprofile");
   }, [isLoading, user, authState.isError, setLocation]);
 
   const startEditing = () => {

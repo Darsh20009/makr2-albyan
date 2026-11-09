@@ -31,6 +31,14 @@ function digestCode(challengeId: string, code: string): Buffer {
   return createHmac("sha256", sessionSecret).update(`${challengeId}:${code}`).digest();
 }
 
+function digestRegistrationToken(token: string): string {
+  const sessionSecret = process.env.SESSION_SECRET;
+  if (!sessionSecret || sessionSecret.length < 32) {
+    throw new PhoneOtpError("خدمة تسجيل الدخول غير مهيأة.", 503);
+  }
+  return createHmac("sha256", sessionSecret).update(`phone-registration:${token}`).digest("hex");
+}
+
 function codeMatches(expectedHex: string, challengeId: string, code: string): boolean {
   try {
     const expected = Buffer.from(expectedHex, "hex");
@@ -119,22 +127,20 @@ export async function requestPhoneLoginCode(
   };
 
   await challenges.insertOne(challenge);
-  if (user || (registrationName && matches.length === 0)) {
-    try {
-      await sendQiroxLoginCode({
-        phone,
-        name: user?.name || registrationName || "مستخدم",
-        code,
-        challengeId,
-      })
-      await challenges.updateOne({ challengeId }, { $set: { deliveryStatus: "sent" } });
-    } catch {
-      await challenges.updateOne(
-        { challengeId },
-        { $set: { deliveryStatus: "failed", expiresAt: new Date() } },
-      );
-      throw new PhoneOtpError("تعذر إرسال الرمز إلى واتساب حالياً. حاول لاحقاً.", 503);
-    }
+  try {
+    await sendQiroxLoginCode({
+      phone,
+      name: user?.name || registrationName || "مستخدم",
+      code,
+      challengeId,
+    });
+    await challenges.updateOne({ challengeId }, { $set: { deliveryStatus: "sent" } });
+  } catch {
+    await challenges.updateOne(
+      { challengeId },
+      { $set: { deliveryStatus: "failed", expiresAt: new Date() } },
+    );
+    throw new PhoneOtpError("تعذر إرسال الرمز إلى واتساب حالياً. حاول لاحقاً.", 503);
   }
 
   return { challengeId };
@@ -205,7 +211,17 @@ export async function verifyPhoneLoginCode(challengeId: unknown, rawCode: unknow
   }
 
   if (!challenge.registrationName) {
-    throw new PhoneOtpError("لم نعثر على حساب مرتبط بهذا الرقم. أنشئ حساباً جديداً أولاً.", 401);
+    const registrationToken = randomUUID();
+    await challenges.updateOne(
+      { challengeId, usedAt: now },
+      {
+        $set: {
+          registrationTokenHash: digestRegistrationToken(registrationToken),
+          registrationTokenExpiresAt: new Date(now.getTime() + 10 * 60 * 1000),
+        },
+      },
+    );
+    return { registrationRequired: true as const, registrationToken };
   }
 
   const currentMatches = await findUsersForPhone(challenge.phone);
@@ -235,4 +251,70 @@ export async function verifyPhoneLoginCode(challengeId: unknown, rawCode: unknow
     webauthnCredentials: [],
   });
   return user;
+}
+
+export async function completePhoneRegistration(rawToken: unknown, rawName: unknown): Promise<any> {
+  if (typeof rawToken !== "string" || rawToken.length > 64) {
+    throw new PhoneOtpError("جلسة التسجيل غير صالحة. ابدأ من جديد.", 400);
+  }
+
+  const name = typeof rawName === "string" ? rawName.trim().replace(/\s+/g, " ") : "";
+  if (name.length < 2 || name.length > 100) {
+    throw new PhoneOtpError("اكتب اسمك من حرفين إلى 100 حرف.", 400);
+  }
+
+  const now = new Date();
+  const tokenHash = digestRegistrationToken(rawToken);
+  const challenge = await challenges.findOne({
+    registrationTokenHash: tokenHash,
+    registrationTokenExpiresAt: { $gt: now },
+    registrationTokenUsedAt: { $exists: false },
+    userId: null,
+    phoneConflict: { $ne: true },
+  });
+  if (!challenge) {
+    throw new PhoneOtpError("انتهت صلاحية التسجيل. ابدأ من جديد.", 400);
+  }
+
+  const consumed = await challenges.updateOne(
+    {
+      _id: challenge._id,
+      registrationTokenHash: tokenHash,
+      registrationTokenExpiresAt: { $gt: now },
+      registrationTokenUsedAt: { $exists: false },
+    },
+    { $set: { registrationTokenUsedAt: now } },
+  );
+  if (consumed.modifiedCount !== 1) {
+    throw new PhoneOtpError("انتهت صلاحية التسجيل. ابدأ من جديد.", 400);
+  }
+
+  const currentMatches = await findUsersForPhone(challenge.phone);
+  if (currentMatches.length > 1) {
+    throw new PhoneOtpError("تعذر ربط هذا الرقم بحساب واحد. تواصل مع إدارة الجمعية لتحديثه.", 409);
+  }
+  if (currentMatches.length === 1) {
+    const existing = currentMatches[0];
+    if (existing.status && existing.status !== "active") {
+      throw new PhoneOtpError("هذا الحساب غير نشط. تواصل مع إدارة الجمعية.", 403);
+    }
+    const existingUser = await storage.getUser(String(existing._id));
+    if (existingUser) return existingUser;
+    throw new PhoneOtpError("تعذر تسجيل الدخول بهذا الرقم.", 401);
+  }
+
+  return storage.createUser({
+    name,
+    mobile: challenge.phone.replace(/^\+966/, ""),
+    role: "user",
+    status: "active",
+    isPublicDonor: true,
+    verifiedFlag: true,
+    totalDonations: 0,
+    points: 0,
+    donationCount: 0,
+    level: "bronze",
+    badges: [],
+    webauthnCredentials: [],
+  });
 }

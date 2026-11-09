@@ -1,0 +1,66 @@
+modules = ["nodejs-20", "web", "python-3.12"]
+[nix]
+channel = "stable-25_05"
+packages = ["freetype", "gumbo", "harfbuzz", "jbig2dec", "libjpeg_turbo", "mupdf", "openjpeg", "swig", "unzip", "xcbuild"]
+
+[agent]
+expertMode = true
+stack = "FULLSTACK_JS"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "NODE_ENV=development node_modules/.bin/tsx server/index.ts"
+waitForPort = 5000
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 23636
+externalPort = 3000
+
+[deployment]
+deploymentTarget = "autoscale"
+run = ["node", "./dist/index.cjs"]
+build = ["npm", "run", "build"]
+
+[userenv]
+
+[userenv.shared]
+APPLE_CLIENT_ID = "tuwaiqassociation.sa"
+APPLE_KEY_ID = "2DW9KXBZQ3"
+APPLE_TEAM_ID = "V4K6RM59LS"
+APP_URL = "https://mo3en-36420026a0.onrender.com"
+BASE_URL = "https://mo3en-36420026a0.onrender.com"
+GOOGLE_CLIENT_ID = "728865404775-r7bscobuj2k7jffaeilebdpi2tv7sclc.apps.googleusercontent.com"
+PAYMOB_INTEGRATION_ID = "23841"
+SMTP_FROM = "info@qirox.online"
+SMTP_HOST = "server222.web-hosting.com"
+SMTP_PORT = "465"
+SMTP_USER = "info@qirox.online"
+VAPID_PUBLIC_KEY = "BJJF74-lMpjcihxmsFCpbIwLhz_Q6WZHt_oXZr4QOtpkZlXA7P2I-AkavSDh6JuveJE2ovFqux32y_idXvGs-GA"
+VITE_GOOGLE_CLIENT_ID = "728865404775-r7bscobuj2k7jffaeilebdpi2tv7sclc.apps.googleusercontent.com"
+CPANEL_SMTP_HOST = "server222.web-hosting.com"
+CPANEL_SMTP_PORT = "465"
+CPANEL_SMTP_USER = "info@qirox.online"
+CPANEL_USERNAME = "rfpeddku"

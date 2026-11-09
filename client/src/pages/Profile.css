@@ -109,6 +109,9 @@
 .ap-invoice-row h3 { font-size: 14px; overflow-wrap: anywhere; }
 .ap-invoice-row p { color: var(--ap-muted); font-size: 12px; margin-top: 5px; }
 .ap-invoice-row .ap-button { flex-shrink: 0; }
+.ap-invoice-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.ap-button-whatsapp { color: #176b4e; border-color: #c5d9ce; }
+.ap-button-whatsapp:hover:not(:disabled) { border-color: #84b09a; background: #eff6f0; }
 .ap-invoice-dialog { width: min(100% - 28px, 640px); }
 .ap-invoice-document { margin-top: 16px; border: 1px solid #dbe1d6; border-top: 4px solid #b79a60; border-radius: 8px; padding: 25px; background: #fffdf7; color: #263d33; font-family: "Tajawal", sans-serif; }
 .ap-invoice-document header { border-bottom: 1px solid #dbe1d6; padding-bottom: 17px; margin-bottom: 20px; }
@@ -122,6 +125,7 @@
 .ap-print-root { display: none; }
 @media (max-width: 767px) {
   .ap-invoice-row { gap: 10px; flex-wrap: wrap; }
+  .ap-invoice-actions { width: 100%; flex-direction: column; }
   .ap-invoice-row .ap-button { width: 100%; }
   .ap-invoice-document { padding: 17px; }
   .ap-invoice-document dl > div { grid-template-columns: 90px minmax(0, 1fr); gap: 8px; }
